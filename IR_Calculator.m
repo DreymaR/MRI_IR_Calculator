@@ -15,16 +15,19 @@ function IR_Calculator()
 %   - There's a good explanation of inversion mathematics at http://xrayphysics.com/contrast.html
 %   - About (single) incomplete inversion, see Miho Kita et al, MRI 31(9) 2013 p 1631–1639.
 %       - http://www.sciencedirect.com/science/article/pii/S0730725X13002312
-%       - OliG: 95-99% is realistic, depending on the pulses. Nonselective IR is better.
-%   - Simulated FLAIR TI is lower than the one used by Siemens (for TR 5000 w/ T2prep on 1.5 T, ~1650 vs 1800 ms).
+%       - OliG: 95-99% is realistic, depending on the pulses. Nonselective IR is better. (HypSec ~98%?)
+%   - Simulated FLAIR TI is lower than the one used by Siemens/GE (for TR 5000 w/ T2prep on 1.5 T, ~1650 vs 1800 ms).
 %       - I think this is intentional, accepting a little CSF signal to gain WML signal and contrast.
 %       - Simulating (by setting T1_n to ~7000 ms) gives 5-6% residual CSF signal, but +20% signal/contrast for WML!
 %       - Maybe the somewhat low effective (or "apparent") TE is a further tweak to improve SNR/CNR.
+%       - Not only! The CSF signal is really nulled in the images.
+%       - For Philips, the simulation is in agreement with their values!
 % 
 %  TODO:
+%   - A setting for residual CSF percentage?! Let's say we accept 10% (CSF signal = -0.1) to get better contrast...
 %   - Fix the T1null curves for T2prep. The TI values are right but the red/blue curves don't follow.
 %   - Rewrite with handles structure ( use guihandles(), guidata() etc ) like GUIDE; check GUIDE first.
-%   - Use less globals! Maybe also a struct/cell array for a set of properties/settings?
+%   - Use less globals! Maybe also a struct/cell array for a set of properties/settings? Doesn't work for some vars?
 %   - Include "T1W WM/WML" in DIR nulling options!?
 %       - Instead of the Mode button, make it show "IR"/"DIR", depending.
 %       - Then, with DIR, add another button for "T1W nulling"
@@ -104,13 +107,15 @@ iS.T2pOn = true;    % WIP!!! Turn this off when T1n is set manually (as T2 is th
 
 iS.TR   = 6000.0    ; % ms                          % Repetition time, as float
 iS.ETD  =  800.0    ; % ms                          % Readout time T_Ro = ETL * ESP (GE: Check CVs after Download)
-iS.IEf  =   97      ; % %                           % Inversion efficiency in percent
+iS.IEf  =   98      ; % %                           % Inversion efficiency in percent (are GE's SECH pulses ~98-99%?)
 iS.T2p  =    0.0    ; % ms                          % T2 preparation time
 iS.TOb  =   25.0    ; % ms                          % TI1 outboard (Siemens: Add at least 23 ms; +10? ms for T2p?)
 iS.FAx  =   90      ; % °                           % (MEX = cos(FAx*pi/180) is MagZ after excitation with angle FAx)
-iS.Rew  =    0.0    ; %                             % Rewinder after readout, regaining some of the pre-readout Mz?
-iS.ESP  = 3.65; iS.IET = 0.50; % iS.ETL = 122;      % Echo Train Length, Echo Spacing and Inv.Eff. for TSE readout
-                                                    % WIP: Just assuming incomplete inversion doesn't lead to a T1rho!
+iS.ESP  = 3.65; iS.IET = 0.50; % iS.ETL = 122;      % Echo Spacing, Echo Train Length and Inv.Eff. for TSE readout
+                                                    % WIP: Just assuming incomplete inversion doesn't lead to anything!?
+                                                    % Actual flip angles are swept from about 10-170° to preserve Mz!
+iR.RCS  =    0.0    ; % %                           % Residual CSF signal desired. This may be a means to increase CNR.
+iS.Rew  =    0.0    ; %                             % Rewinder after readout, regaining some of the pre-readout Mz? (TODO)
 iUI.Show    = true  ;                               % Show the UI control panel
 iPr.Mode    =    1  ;                               % Start in mode 1, then keep the run mode over reruns
 iPr.TsSel   =    3  ;                               % Start with a value (CSF), then keep the selection over reruns
@@ -134,9 +139,10 @@ function main()
         case 1                                      % Mode 1 (1IR tissue nulling)
             mainSIRNul( iT.Tn1 );
         case 2                                      % Mode 2 (DIR tissue nulling)
+            iR.RCS = 0.0;   % TODO: For now, we set this to zero for mode 2 as it isn't working there yet.
             mainDIRNul( iT.Tn1, iT.Tn2 );
         case 3                                      % Mode 3 (T1W nulling)
-            Tn2 = mainT1WNul();                     % ( T1_CSF, T1_WM, T1_MS )
+            Tn2 = mainT1WNul();                     % ( T1_CSF, T1_WM, T1_MS )  % TODO: Set iT.Tn2 here?
     end
     IR_CreateUI();
 %     if saveImg, saveFigAsImg(),end                  % Automatically save the fig. as an image (or use the fig. menu)
@@ -150,7 +156,8 @@ function mainSIRNul( T1z1 )
     iT.Ti1n = uint16( CalcTInT1( iT.T1z, E2 ) );    % Calc. TI (make value int for figure display)
     
     TInts = [ 0, iT.Ti1n, iS.TR ];                  % SIR: Inversion is at t = 0, then readout at TI
-    Mzt = PlotMagZ( TInts );                        % Plot Z magnetization over time, return end MagZ vector
+    IR_T1_Magplot( TInts );
+%     PlotMagZ( TInts );                              % Plot Z magnetization over time [returned end MagZ vector w/ Mzt = ]
     
     txt = ['Single IR tissue nulling at ' iPr.B0tag ', for TR_{eff} = ' num2str(iS.TRef) ' ms'];
     title(  txt,                                ...
@@ -185,7 +192,8 @@ function mainDIRNul( T1z1, T1z2 )
     [ iT.Ti1n, iT.Ti2n ] = Find2TIn2T1([T1z1,T1z2],E2); % Inversion times that null 2 T1
     
     TInts = [ 0, (iT.Ti1n-iT.Ti2n), iT.Ti1n, iS.TR ];   % DIR: Vector of all time points (inversion, readout and end)
-    Mzt = PlotMagZ( TInts );                        % Plot Z magnetization over time, return end MagZ vector
+    IR_T1_Magplot( TInts );
+%     PlotMagZ( TInts );                                  % Plot Z magnetization over time [returned end MagZ vector w/ Mzt = ]
 
     txt = ['DIR dual tissue nulling at ' iPr.B0tag ', for TR_{eff} = ' num2str(iS.TRef) ' ms'];
     title(  txt,                                ...
@@ -374,7 +382,8 @@ end % fcn
 function TI_SIR     = CalcTInT1( T1, E2 )           % Calc. TI nulling T1 in a single IR sequence
     T1 = FoS(T1);                                   % Cast input as float unless it's a sym
 %     TI_SIR = log(2)*T1;                             % The simple case, TR>>T1, gives TIn = ln(2)*T1 ? 0.69*T1
-    TI_SIR = T1*log( (1+IE.*E2) ./ (1 + IE*E2.*exp(-iS.TRef./T1)) );  % 1IR TI nulling T1
+    CS = iR.RCS / 100.0;                            % Desired residual CSF signal (in percent)
+    TI_SIR = T1*log( (1+IE.*E2) ./ (1 - CS + IE*E2.*exp(-iS.TRef./T1)) );  % 1IR TI nulling T1
 end % fcn
 
 function TI1_DIR    = CalcTi1D( Ti2, T1, E2 )       % Calc. TI1 (new TI1, the old one was - TI2) nulling T1 given TI2
@@ -395,7 +404,7 @@ function [ Ti1n, Ti2n ] = Find2TIn2T1( T1d, E2 )    % Find TI1/TI2 that null two
     T1 = FoS(T1d);                                  % Cast input as float unless it's a sym
 %     Ti2n = vpasolve(CalcS0D(CalcTi1D(t,T1n1),t,T1n2), t);   % (Used VPAsolve for numeric output but still got syms?)
 %     Ti2n = vpasolve( CalcS0( [ CalcTi1D(t,T1(1),E2(1)) , t ],T1(2),E2(2) ), t );
-    Ti2n = vpasolve( CalcS0for0( t, T1, E2 ), t );
+    Ti2n = vpasolve( CalcS0for0( t, T1, E2 ), t );  % TODO: Incorporate CS here ... and where else?!? (Done for FLAIR)
     Ti1n = uint16( CalcTi1D( Ti2n,T1(1),E2(1) ) );  % Make value int for figure display; round() doesn't change the sym!
     Ti2n = uint16( Ti2n );                          % --"--
 end % fcn
@@ -602,129 +611,7 @@ end % setRelaxTimes
 
 %% PLOT
 
-% Plot the magnetization Mz of several T1s under multiple inversion time points (NB: Absolute TI times are used here!)
-function MagZ = PlotMagZ( TIabs )                   % ( TIabs, T1ts, T1cs ); TIabs = [ dTI1 dTI1+dTI2 Tacq DUR ]
-    NIT = length(TIabs)-2;                          % # of inversion time points, without readout time and duration
-    if ( iS.T2pOn )
-        TIabs(2:NIT+1) = TIabs(2:NIT+1) + iS.T2p;   % We simulate T2 prep first in the sequence, so add it to TI
-    end % if
-    TIn = TIabs(1:NIT); DUR = TIabs(NIT+2);         % Actual inversion time points & total duration for the plot
-    TIR = TIabs(NIT+1); xRo = double([ TIR TIR ]);  % Readout time (=TI)
-%     sZRo = 0.02*iS.ETD;                             % NOTE: sZRo is irrelevant as spin lock dictates readout from TIR?
-%     TRo = xRo + [ -sZRo, (iS.ETD-sZRo) ];           % Readout time range. Linear(sZRo=0.5) or center-out (sZRo small)?
-    TRo = xRo + [ 0, iS.ETD ];                      % Readout time range. Due to spin lock, this should start at TIR.
-    dT = 1.0; TPv = (0:dT:DUR-dT);                  % Sampling interval dT (ms, Int), TPv is the time point vector
-    
-    T1Plt = Ts.Plt(1,:); T2Plt = Ts.Plt(2,:);
-    Ntis = length( Ts.Plt(1,:) );                   % # of relaxation times for which to calculate/plot
-%     if ( ~iS.T2pOn )                                % WIP: Plotting extra tissues is hard if T2 in T2p is unknown!
-%         if ~ismember( iT.T1z, T1Plt )               % Add T1z if not in the preselected T1 ensemble
-%             Ntis  = Ntis + 1;
-%             T1Plt = double( [ T1Plt, iT.T1z ] );
-%             T2Plt = double( [ T2Plt, iT.T1z ] );    % WIP: Estimate T2 (or look it up)? No.
-%             Ts.Leg = [ Ts.Leg, sprintf('T1#%s', num2str(Ntis)) ];
-%         end % if ~ismember iT.T1z
-%     end % if iS.T2pOn
-    Mz = ones( Ntis, DUR );                         % MagZ for all tissues and time points (was zeros(NT1s+1...)
-    
-    % WIP: Starting Z magnetization calculation.
-%     Mz0 = ones(1,length(T1Plt));                    % Test/debug: Start with relaxed signal (TR >> T1)
-%     Mz0 = -IE*Mz0;                                  % --"--: Start with inversion
-%     Mz0 = 0*Mz0;                                    % --"--: Start with saturation
-%     Mz0 = -CalcS0( [ iS.TRef, 0 ], [ T1Plt ] )      % --"--: CalcS0 uses TI differences.
-%     Mz0 = CalcMagZ( [ 0 ], iS.TRef, T1Plt )         % --"--: [1 - exp(-iS.TRef./T1Plt)]
-    % TODO: Use derivation instead of iteration to arrive at SS? Maybe not so critical. Also, nice to simulate it.
-    RTI = zeros( 1, iS.ETL);
-    for i = 1:iS.ETL
-        RTI(i) = TRo(1) + round(i*iS.ESP);          % Array of readout refocus times. TODO: Avoid rounding?
-    end % for
-    
-    its=3; iR.MzIt = ones(Ntis,its);                % Iterate to get to a steady state
-    for i = 1:its                                   % Iteration loop (Note: Needs only two TR if Mz(TRo)=0)
-        Mz(:,1) = Mz(:,DUR);                            % The starting magnetization (before first inv.) is MagZ(TR)
-        for j = 2:DUR                                   % Step through all time points
-            tpt = (j-2)*dT;                             % Was (j-1)*dT, but I want the time point 0 to be defined
-            Mz1 = Mz(:,j-1);                            % MagZ at the previous time point
-            if ismember( tpt, TIn )                     % Inversion time, so invert the Mz (accounting for Inv.Eff.)
-                Mz(:,j) = -IE*Mz1;                      % (was any(Ts == TIn(:)) before)
-            elseif ( tpt == TRo(1) )                    % Readout time
-                iR.MzTI = Mz1;                          % MagZ at readout
-                iR.S0   = sin(iS.FAx*pi/180)*Mz1;       % Signal strength at readout
-                Mz(:,j) = cos(iS.FAx*pi/180)*Mz1;
-                MzRo    = iR.MzTI - Mz(:,j);
-%             elseif ( Ts > TRo(1) ) && ( Ts < TRo(2) )   % Readout with CPMG train, so signal doesn't evolve (so much)
-            elseif ismember( tpt, RTI )                 % CPMG refocus time (rounded to the nearest ms...)
-                Mz(:,j) = -iS.IET*Mz1;
-%                 for k = 1:NT1s                        % TODO: Evolve slowly during readout with adjusted T1s? Or?!?
-%                     Mz(k,j) = 1 - (1 - Mz(k,j-1))*exp(-dT*T1rhF/T1Plt(k));
-%                 end % for k
-            elseif ( tpt == TRo(2) )                    % Readout end
-                Mz(:,j) = Mz1 + iS.Rew*MzRo;            % A rewinder reclaims some excitation signal as Mz? Or can it?!?
-%             elseif ( Ts > iS.TR - iS.T2p )              % T2 preparation (effectively decays Mz with T2)
-            elseif ( tpt < iS.T2p ) && ( iS.T2pOn )     % T2 preparation (effectively decays Mz with T2)
-                for k = 1:Ntis                          % Can't assign all tissues at once with exp, so use a loop
-                    Mz(k,j) = Mz(k,j-1)*exp(-dT/T2Plt(k)); % 
-                end % for k
-            else                                        % Signal evolvement ( if(t~=TI(:)) )
-                for k = 1:Ntis                          % Can't assign all tissues at once with exp, so use a loop
-    %                 Mz(k,j) = Mz(k,j-1)*exp(-dT/T1v(k)) + (1-exp(-dT/T1v(k)));
-                    Mz(k,j) = 1 - (1 - Mz(k,j-1))*exp(-dT/T1Plt(k));
-                end % for k
-            end % if Ts
-        end % for j
-        iR.MzIt(:,i) = Mz(:,DUR);                   % The end Z magnetization for all T1s, for this iteration
-    end % for i
-    MagZ = Mz(:,DUR)';                              % Return the end Z magnetization for all T1s as a vector
-    
-%     Mz = [ Mz; zeros(1,DUR) ];                    % Add a zero line to the plot
-    plot( TPv, Mz, '-',                         ... % Plot the (steady state) Z magnetization
-        'LineWidth', 1.5                        )
-    
-    xlabel( 't (ms)'      , 'FontSize', 12 )
-    ylabel( 'Rel. Z magn.', 'FontSize', 12 )
-    xlm = [  0  DUR ]; xlim(xlm);
-    ylm = [ -1   1  ]; ylim(ylm);
-%     set( gca, 'XTick', [] );                        % Remove x axis ticks
-%     set( gca, 'YTick', [] );                        % Remove y axis ticks
-
-    line( xlm, [ 0 0 ],                         ... % Zero line
-        'Color', 'black',                       ...
-        'LineWidth', 0.7,                       ...
-        'LineStyle', ':'                        );
-    line( TRo, [ -0.975 -0.975 ],               ... % Horizontal line representing readout
-        'DisplayName', 'Echo train',            ...
-        'Color', [ 0.3 0.6 0.3 ],               ... % 'black'
-        'LineWidth', 8,                         ...
-        'LineStyle', '-'                        );
-    
-    if ( iS.T2pOn )
-        line( [ 0 iS.T2p ], [ -0.975 -0.975 ],      ... % Horizontal line representing T2prep
-            'DisplayName', 'T2 prep.',              ...
-            'Color', [ 0.9 0.6 0.3 ],               ...
-            'LineWidth', 8,                         ...
-            'LineStyle', '-'                        );
-    end % if T2pOn
-    
-    for i = 1:NIT
-    line( [ TIn(i) TIn(i) ], [ -1.00 -0.92 ],   ... % Vertical line representing inversion
-        'DisplayName', 'Inversion',             ...
-        'Color', [ 0.5 0.3 0.7 ],               ...
-        'LineWidth', 5,                         ...
-        'LineJoin', 'chamfer',                  ... % Note: This doesn't round corners unless they're joined.
-        'LineStyle', '-'                        );
-    end % for i
-    
-%     line( xRo, ylm,                             ... % Vertical line at TEeff (=TI)
-%         'Color', 'black',                       ... % (Tip: If declared after legend, the line appears in it)
-%         'DisplayName', 'TI_{1}',                ... % 'TE_{eff}'
-%         'LineStyle', ':'                        );
-    
-    LegS = strings(1,Ntis);                             % Figure legends
-    for i = 1:Ntis
-        LegS(i) = sprintf('%4s (T1: %4i ms)', Ts.Leg(i), Ts.Plt(1,i) );   %legend('WM', 'GM', 'CSF'...
-    end % for i
-    legend( LegS, 'Location', 'NorthWest');
-end % PlotMagZ
+% Note: The PlotMagZ function was moved to another file since this file is so long
 
 function figTextBox( fStr, fVar )
     txt = sprintf( fStr, fVar );                    % Formatted string "print"
@@ -818,7 +705,7 @@ function createUIPanel()
     boxClr = iPr.FigClr;                            % UI panel background color (same as fig background)
 %     uiX = 58.3*fSz; uiY = 54.5*fSz;                 % Default start position (in px) for UI controls
     mX = 10; mY =  6;                               % x/y margins in UI panel
-    eN = 10; eW = 120; eH = 30;                     % Number of UI elements; default element width/height
+    eN = 11; eW = 120; eH = 30;                     % Number of UI elements; default element width/height
     iUI.Hpx = eN*eH + 2*mY; uiT = iUI.Hpx - mY +  3;    % UI panel height in pixels; top position for elements
     iUI.Wpx = eW + 2*mX;                              % UI panel width in pixels
     
@@ -1021,6 +908,22 @@ function createUIPanel()
                 'Enable',       'Inactive'              );
             end % if
 
+        case  11
+        uicontrol( 'Parent', iUIBox,                ... % ui RS[T|S]
+            'Position', [ mX eY+2 eW 16 ],          ...
+            'Style', 'text',                        ...
+            'BackgroundColor', boxClr,              ...
+            'HorizontalAlignment', 'Left',          ...
+            'ToolTipString', 'Desired rest S(CSF)', ...
+            'String', 'Res.S:                       %');
+        uicontrol( 'Parent', iUIBox,                ...
+            'Position', [ mX+40 eY+0 60 20 ],       ...
+            'Style', 'edit',                        ...
+            'String',   iR.RCS,                     ...
+            'Value',    iR.RCS,                     ...
+            'ToolTipString', 'May improve CNR?',    ...
+            'Callback', @rs_set_callback            );  % UI to set desired residual CSF signal
+
 %         case  11
 %         uicontrol( 'Parent', iUIBox,                ... % ui FAex[T|S]
 %             'Position', [ mX eY+1 eW 16 ],          ...
@@ -1155,10 +1058,10 @@ function t1_sel_callback(src,~)                     % UI to select a tissue T1 t
     main();
 end % fcn
 
-function fa_set_callback(src,~)                     % UI to select the flip angle (in degrees)
-    iS.FAx = str2val( src.String );
-    main();
-end % fcn
+% function fa_set_callback(src,~)                     % UI to select the flip angle (in degrees)
+%     iS.FAx = str2val( src.String );
+%     main();
+% end % fcn
 
 function t2p_set_callback(src,~)                    % UI to select the T2 preparation time (in ms)
     iS.T2p = str2val( src.String );
@@ -1167,6 +1070,11 @@ end % fcn
 
 function ie_set_callback(src,~)                     % UI to select the inversion efficiency (in percent)
     iS.IEf = str2val( src.String );
+    main();
+end % fcn
+
+function rs_set_callback(src,~)                     % UI to select the desired residual CSF signal (in percent)
+    iR.RCS = str2val( src.String );
     main();
 end % fcn
 
