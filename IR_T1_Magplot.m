@@ -71,7 +71,7 @@ global IE                                             % Globals that didn't thri
 %                     Mz(k,j) = 1 - (1 - Mz(k,j-1))*exp(-dT*T1rhF/T1Plt(k));
 %                 end % for k
             elseif ( tpt == TRo(2) )                    % Readout end
-                Mz(:,j) = Mz1 + iS.Rew*MzRo;            % A rewinder reclaims some excitation signal as Mz? Or can it?!?
+                Mz(:,j) = Mz1 + iS.Rew*MzRo;            % A drive pulse reclaims some excitation signal as Mz? Or can it?!?
 %             elseif ( Ts > iS.TR - iS.T2p )              % T2 preparation (effectively decays Mz with T2)
             elseif ( tpt < iS.T2p ) && ( iS.T2pOn )     % T2 preparation (effectively decays Mz with T2)
                 for k = 1:Ntis                          % Can't assign all tissues at once with exp, so use a loop

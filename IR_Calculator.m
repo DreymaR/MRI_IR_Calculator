@@ -24,7 +24,10 @@ function IR_Calculator()
 %       - For Philips, the simulation is in agreement with their values!
 % 
 %  TODO:
+%   - Better Bloch simulation of curves! Simply let Mz -> [Mz,Mt], and move Mz->Mt for excitation etc.
+%       - Do we have spoiling between refocus pulses? Do Phi use hard pulses with +/- phase (semi-balanced)?
 %   - A setting for residual CSF percentage?! Let's say we accept 10% (CSF signal = -0.1) to get better contrast...
+%       - Works for SIR; needs work for DIR
 %   - Fix the T1null curves for T2prep. The TI values are right but the red/blue curves don't follow.
 %   - Rewrite with handles structure ( use guihandles(), guidata() etc ) like GUIDE; check GUIDE first.
 %   - Use less globals! Maybe also a struct/cell array for a set of properties/settings? Doesn't work for some vars?
@@ -53,8 +56,8 @@ function IR_Calculator()
 %   - Solve optimal TI1/TI2 symbolically instead of numerically (taking the minimum of the difference)
 %   - Solve Mz(0) in TIR/DIR by formula [1 - E_(TR-TI1)] instead of iteration? No, it's good to simulate it as a check.
 %   - Implement excitation 
-%       - Without rewinding? What is the case in our sequences?
-%       - Add a GUI for effective FA (90° for full excitation, 0° if refocused). Maybe also add rewinder?
+%       - Without reclaiming (drive)? What is the case in our sequences?
+%       - Add a GUI for effective FA (90° for full excitation, 0° if refocused). Maybe also add drive?
 %       - Retired the unused excitation FA UI again. It's commented out but still there should anyone need it.
 %   - Implement incomplete inversion using the Inversion Efficiency = -cos(FA_inv)
 %   - Added a generic S0 formula CalcS0() instead of CalcS0S() and CalcS0D().
@@ -234,12 +237,12 @@ function T1z2 = mainT1WNul()                        % T1_nulled = T1WNul( T1_CSF
     E2 = CalcPE2( Tis );                            % Calculate E2 if using T2prep (=1 otherwise)
     E2C = E2(1)    ; E2W = E2(2)    ; E2L = E2(3);  % (CSF, WM, WML)
     iT.Ti2max = T1C*log( (1+IE)/(1+IE*exp(-iS.TRef/T1C)) ); % Max TI2 nulling T1C, usually CSF (@ max TI1 = TReff)
-%     iT.Ti2max = T1C*log(2/(1 + 2*exp(-iS.TR/T1C) - exp(-iS.TRef/T1C))); % Old Ti2max calculation without InvEff
+%     iT.Ti2max = T1C*log(2/(1 + 2*exp(-iS.TR/T1C) - exp(-iS.TRef/T1C))); % Old Ti2max calculation without InvEff/T2P
     Ti2 = 1:1:iT.Ti2max; DUR = length(Ti2);         % Vector of TI2 values 1 ms apart (could've used linspace() here)
     Ti1 = zeros(DUR,1);                             % Vector of TI1 values for all TI2s; replace by TI1s(TI2s)?
     S0_DIR = zeros(DUR,2);                          % Array of two DIR signals@TE=0 for TI2s
     
-%     if ( iS.T2pOn )
+%     if ( iS.T2pOn )                               % Do we report Ti as time from start or from the end of T2 prep.?
 %         Ti1plus = iS.T2p;
 %     else
 %         Ti1plus = 0;
@@ -252,19 +255,9 @@ function T1z2 = mainT1WNul()                        % T1_nulled = T1WNul( T1_CSF
         S0_DIR(i,2) = CalcS0([Ti1(i),Ti2(i)],T1L,E2L);  % --"--
     end
     
-%     S0_DIFF = abs(S0_DIR(:,1)-S0_DIR(:,2));         % Calculate signal difference between two T1s
-%     [~,minind] = min(S0_DIFF);                      % Find the T1Wnull crossing graphically (as [minval,minind])
-%     iT.Ti2n = TI2(minind);
     iT.Ti2n = uint16( FindTi2nT1W(Tis(1,:),E2) );   % Find TI2 to null the DIR T1 weighting between two T1s (T1C, T1W, T1L)
-    iT.Ti1n = uint16( CalcTi1D(iT.Ti2n,T1C,E2C)  ); % TI1(TI2) calc. by function
-%     iT.Ti2n = uint16(iT.Ti2n);                      % Make figure text nicer w/o e+ notation
+    iT.Ti1n = uint16( CalcTi1D(iT.Ti2n,T1C,E2C)  ); % TI1(TI2) calc. by function (uint to avoid e+ notation in fig. text)
 %     iT.Ti1n = uint16(TI1s( iT.Ti2n ));              % TI1(TI2) calc. by symbolic expr. (slower?!)
-% DEBUG: Find out what goes wrong with the S0 calculations...?
-    Ti1_t   = CalcTi1D(iT.Ti2n,T1C,E2C);            % TI1(TI2) calc. for T1_CSF
-    S0W_t   = CalcS0([iT.Ti1n,iT.Ti2n],T1W,E2W);    % S0(TI2) calc.
-    S0L_t   = CalcS0([iT.Ti1n,iT.Ti2n],T1L,E2L);    % --"--
-    disp( "    TI1,      S0W,      S0L      (Debug T1null)" )
-    disp( [ Ti1_t, S0W_t, S0L_t ] )
     
     % WIP: What E2 would GE operate with for a fictive tissue? WM/E2(2)? For now, let's ignore T2prep w/ E=1
     %      Judging from observation, that's what GE does too!
@@ -277,9 +270,15 @@ function T1z2 = mainT1WNul()                        % T1_nulled = T1WNul( T1_CSF
         'LineWidth', 1.0                        )   % Plot the signals calculated above
     plot( Ti2, S0_DIR(:,2), 'b-' ,              ...
         'LineWidth', 1.0                        )
-%     plot(TI2,TI1);                                  % Debug: Plot the TI1 calculated for each TI2
-%     fplot( t, TI1s(t) );                            % Debug: Plot the symbolic TI1(TI2) - WIP
-%     plot(TI2,S0_DIFF);                              % Debug: Plot the WM/MS signal difference
+%     S0W_t   = CalcS0([iT.Ti1n,iT.Ti2n],T1W,E2W);    % DEBUG: S0(Ti1,Ti2) calc.
+%     S0L_t   = CalcS0([iT.Ti1n,iT.Ti2n],T1L,E2L);    % --"--
+%     disp( "    S0W,      S0L      (Debug T1null)" )
+%     disp( [ S0W_t, S0L_t ] )
+%     plot(Ti2,Ti1);                                  % DEBUG: Plot the TI1 calculated for each TI2
+%     S0_DIFF = abs(S0_DIR(:,1)-S0_DIR(:,2));         % DEBUG: Calculate signal difference between two T1s
+%     [~,minind] = min(S0_DIFF);                      % Find the T1Wnull crossing graphically (as [minval,minind])
+%     iT.Ti2n = Ti2(minind);
+%     plot(Ti2,S0_DIFF);                              % DEBUG: Plot the WM/MS signal difference
     hold off
     
     whitebg( 'white' );
@@ -365,7 +364,7 @@ function S0_IR      = CalcS0( Ti, T1, E2 )          % Calculate generic IR relat
     for i = 0:NI-2    % (was 0:NInv-1)
         S0_IR = S0_IR - (-IE)^i*(1+IE).*exp(-Ti(NI-i)./T1);     % Step backwards through the inversions
     end
-    S0_IR = S0_IR - (-IE)^(NI-1)*(1+IE)*E2.*exp(-Ti(1)./T1);    % The last step includes E2 for T2prep
+    S0_IR = S0_IR - (-IE)^(NI-1)*(1+IE*E2).*exp(-Ti(1)./T1);    % The last step includes E2 for T2prep
     S0_IR = S0_IR - (-IE)^(NI-0)*E2.*exp(-iS.TRef./T1);         % Gives one signal value per given T1
 end % fcn
 
@@ -388,13 +387,13 @@ end % fcn
 
 function TI1_DIR    = CalcTi1D( Ti2, T1, E2 )       % Calc. TI1 (new TI1, the old one was - TI2) nulling T1 given TI2
     Ti2 = FoS(Ti2); T1 = FoS(T1);                   % Cast input as float unless it's a sym
-    TI1_DIR = T1.*log( IE*(1+IE*E2)./((1+IE).*exp(-Ti2./T1) + IE^2*E2.*exp(-iS.TRef./T1) - 1) );  % (May be a sym)
+    TI1_DIR = T1.*log( IE*(1+IE*E2)./( (1+IE).*exp(-Ti2./T1) + IE^2*E2.*exp(-iS.TRef./T1) - 1 ) );  % (May be a sym)
 end % fcn
 
 function S0_nD      = CalcS0for0( Ti2, T1d, E2d )   % Calc. S0 from a DIR T1 found, combining CalcS0D+TI1D for sanity
     Ti2 = FoS(Ti2); T1d = FoS(T1d);                 % Cast input as float unless it's a sym (also, using 1x1 vars here)
     T1 = T1d(1); E2 = E2d(1);
-    Ti1 = T1*log( IE*(1+IE*E2)/( (1+IE)*exp(-Ti2/T1) + IE^2*E2*exp(-iS.TRef/T1) - 1 ) );    % No .*./ here - only one T1
+    Ti1 = T1*log( IE*(1+IE*E2)/( (1+IE)*exp(-Ti2/T1) + IE^2*E2*exp(-iS.TRef/T1) - 1 ) );    % No .* ./ here: Only one T1
     T1 = T1d(2); E2 = E2d(2);
     S0_nD = 1 - (1+IE)*exp(-Ti2/T1) + IE*(1+IE*E2)*exp(-Ti1/T1) - IE^2*E2*exp(-iS.TRef/T1);
 %     S0_nD  = CalcS0( [ Ti1, Ti2 ], T1(2), E2(2) );
@@ -409,7 +408,6 @@ function [ Ti1n, Ti2n ] = Find2TIn2T1( T1d, E2 )    % Find TI1/TI2 that null two
     Ti2n = uint16( Ti2n );                          % --"--
 end % fcn
 
-% WIP: Not working right now?!?
 function T1WnTi2    = FindTi2nT1W( T1_CWL, E2 )     % Find TI2 to null CSF and the DIR T1 weighting between WM and WML
     T1 = FoS(T1_CWL);                               % Cast input as float unless it's a sym
 %     T1WnTi2 = vpasolve((CalcS0D(CalcTi1D(t,iT.Tn1),t,T1w1) ...   % Solve S0DIR == 0 for T1
