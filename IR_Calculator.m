@@ -26,8 +26,6 @@ function IR_Calculator()
 %  TODO:
 %   - Better Bloch simulation of curves! Simply let Mz -> [Mz,Mt], and move Mz->Mt for excitation etc.
 %       - Do we have spoiling between refocus pulses? Do Phi use hard pulses with +/- phase (semi-balanced)?
-%   - A setting for residual CSF percentage?! Let's say we accept 10% (CSF signal = -0.1) to get better contrast...
-%       - Works for SIR; needs work for DIR
 %   - Fix the T1null curves for T2prep. The TI values are right but the red/blue curves don't follow.
 %   - Rewrite with handles structure ( use guihandles(), guidata() etc ) like GUIDE; check GUIDE first.
 %   - Use less globals! Maybe also a struct/cell array for a set of properties/settings? Doesn't work for some vars?
@@ -44,6 +42,7 @@ function IR_Calculator()
 %       - But it seems that subplots are intended to be in panels in the same window?
 % 
 %  DONE:
+%   - A setting for residual CSF percentage. Let's say we accept 5% (DIR CSF signal = -0.05) to get better contrast...?
 %   - Find DIR TI1 & TI2 such that two given T1 times are nulled.
 %       - WN: Then we can see any discrepancies compared to vendor (GE/Sie.) calculations!
 %   - Switch between T1W-nulling mode and T1 tissue nulling mode (and figs?).
@@ -117,7 +116,7 @@ iS.FAx  =   90      ; % °                           % (MEX = cos(FAx*pi/180) is 
 iS.ESP  = 3.65; iS.IET = 0.50; % iS.ETL = 122;      % Echo Spacing, Echo Train Length and Inv.Eff. for TSE readout
                                                     % WIP: Just assuming incomplete inversion doesn't lead to anything!?
                                                     % Actual flip angles are swept from about 10-170° to preserve Mz!
-iR.RCS  =    0.0    ; % %                           % Residual CSF signal desired. This may be a means to increase CNR.
+iR.RCS  =    0.0    ; % fraction                    % Residual CSF signal desired. This may be a means to increase CNR.
 iS.Rew  =    0.0    ; %                             % Rewinder after readout, regaining some of the pre-readout Mz? (TODO)
 iUI.Show    = true  ;                               % Show the UI control panel
 iPr.Mode    =    1  ;                               % Start in mode 1, then keep the run mode over reruns
@@ -142,7 +141,6 @@ function main()
         case 1                                      % Mode 1 (1IR tissue nulling)
             mainSIRNul( iT.Tn1 );
         case 2                                      % Mode 2 (DIR tissue nulling)
-            iR.RCS = 0.0;   % TODO: For now, we set this to zero for mode 2 as it isn't working there yet.
             mainDIRNul( iT.Tn1, iT.Tn2 );
         case 3                                      % Mode 3 (T1W nulling)
             Tn2 = mainT1WNul();                     % ( T1_CSF, T1_WM, T1_MS )  % TODO: Set iT.Tn2 here?
@@ -381,19 +379,18 @@ end % fcn
 function TI_SIR     = CalcTInT1( T1, E2 )           % Calc. TI nulling T1 in a single IR sequence
     T1 = FoS(T1);                                   % Cast input as float unless it's a sym
 %     TI_SIR = log(2)*T1;                             % The simple case, TR>>T1, gives TIn = ln(2)*T1 ? 0.69*T1
-    CS = iR.RCS / 100.0;                            % Desired residual CSF signal (in percent)
-    TI_SIR = T1*log( (1+IE.*E2) ./ (1 - CS + IE*E2.*exp(-iS.TRef./T1)) );  % 1IR TI nulling T1
+    TI_SIR = T1*log( (1+IE.*E2) ./ ( 1-iR.RCS + IE*E2.*exp(-iS.TRef./T1) ) );  % 1IR TI nulling T1
 end % fcn
 
 function TI1_DIR    = CalcTi1D( Ti2, T1, E2 )       % Calc. TI1 (new TI1, the old one was - TI2) nulling T1 given TI2
     Ti2 = FoS(Ti2); T1 = FoS(T1);                   % Cast input as float unless it's a sym
-    TI1_DIR = T1.*log( IE*(1+IE*E2)./( (1+IE).*exp(-Ti2./T1) + IE^2*E2.*exp(-iS.TRef./T1) - 1 ) );  % (May be a sym)
+    TI1_DIR = T1.*log( IE*(1+IE*E2)./( -(1+iR.RCS) + (1+IE).*exp(-Ti2./T1) + IE^2*E2.*exp(-iS.TRef./T1) ) );  % (May be a sym)
 end % fcn
 
 function S0_nD      = CalcS0for0( Ti2, T1d, E2d )   % Calc. S0 from a DIR T1 found, combining CalcS0D+TI1D for sanity
     Ti2 = FoS(Ti2); T1d = FoS(T1d);                 % Cast input as float unless it's a sym (also, using 1x1 vars here)
     T1 = T1d(1); E2 = E2d(1);
-    Ti1 = T1*log( IE*(1+IE*E2)/( (1+IE)*exp(-Ti2/T1) + IE^2*E2*exp(-iS.TRef/T1) - 1 ) );    % No .* ./ here: Only one T1
+    Ti1 = T1*log( IE*(1+IE*E2)/( -(1+iR.RCS) + (1+IE)*exp(-Ti2/T1) + IE^2*E2*exp(-iS.TRef/T1) ) ); % No .* ./ here: Only one T1
     T1 = T1d(2); E2 = E2d(2);
     S0_nD = 1 - (1+IE)*exp(-Ti2/T1) + IE*(1+IE*E2)*exp(-Ti1/T1) - IE^2*E2*exp(-iS.TRef/T1);
 %     S0_nD  = CalcS0( [ Ti1, Ti2 ], T1(2), E2(2) );
@@ -917,8 +914,8 @@ function createUIPanel()
         uicontrol( 'Parent', iUIBox,                ...
             'Position', [ mX+40 eY+0 60 20 ],       ...
             'Style', 'edit',                        ...
-            'String',   iR.RCS,                     ...
-            'Value',    iR.RCS,                     ...
+            'String',   100*iR.RCS,                 ...
+            'Value',    100*iR.RCS,                 ...
             'ToolTipString', 'May improve CNR?',    ...
             'Callback', @rs_set_callback            );  % UI to set desired residual CSF signal
 
@@ -1072,7 +1069,7 @@ function ie_set_callback(src,~)                     % UI to select the inversion
 end % fcn
 
 function rs_set_callback(src,~)                     % UI to select the desired residual CSF signal (in percent)
-    iR.RCS = str2val( src.String );
+    iR.RCS = str2val( src.String )/100;
     main();
 end % fcn
 

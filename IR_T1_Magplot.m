@@ -118,7 +118,7 @@ global IE                                             % Globals that didn't thri
     end % if T2pOn
     
     if ( iR.RCS ~= 0 )
-        y = iR.RCS / 100.0;
+        y = (-1^NIT)*iR.RCS;                            % Sensible imperfect nulling depends on number of inversions
         line( [ 0 TRo(1) ], [ y y ],                ... % Horz. line for desired residual CSF signal (imperfect nulling)
             'Color', [ 0.929 0.694 0.125 ],         ... % (Tip: lines(#) gives the color scheme for # plot lines)
         'LineWidth', 1.0,                           ...

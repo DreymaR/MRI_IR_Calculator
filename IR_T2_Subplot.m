@@ -23,7 +23,6 @@ function Fig2 = IR_T2_Subplot( iT, iS2 )    % S0/T2/tags for tissues to plot; fi
 
 %% INIT
 debugInfo  = 1;                                     % Show extra info in the command window?
-DUR     = 599;  % iS2.ETD;                            % Use the sequence Echo Train Duration as plot duration? No, less.
 Tis     = iT.T2tis;
 % nTis    = size( Tis, 2 );                           % # of tissues to compare to the first one, including itself
 
@@ -54,6 +53,7 @@ if isempty( irIni2 )
     irIni2  = true  ;                               % The program has been initialized
     UI2on   = true  ;                               % Show the UI control panel
     frzS2   = 0     ;                               % Don't freeze the RelSNR at first
+    DUR     = 599   ; % iS2.ETD;                    % Use the sequence Echo Train Duration as plot duration? No, less.
     TEmin   = 14    ; % ms                          % Minimum allowed TE
     TEset   = -1.0  ;                               % The manually set TE (will be set to TEopt)
 end % if irIni2
@@ -158,18 +158,18 @@ function mainTEcalc()
     if isempty(oldS2)   ; oldS2 = iR2.absS  ;   end % Old signal strength   for comparison; as float
     if isempty(oldC2)   ; oldC2 = iR2.absC  ;   end % Old signal difference for comparison; as float
     if isempty(oldTR)   ; oldTR = iS2.TR    ;   end % Old rep. time         for comparison; as float
-    relS  = uint16(100*(iR2.absS/oldS2));           % Rel. S(NR) for WML
-    relC  = uint16(100*(iR2.absC/oldC2));           % Rel. C(NR) between WML and tissue
-    relS_t  = uint16(100*( (iR2.absS/oldS2)/sqrt(iS2.TR/oldTR) ));  % Rel. signal per time (ratio of S over TR)
-    relC_t  = uint16(100*( (iR2.absC/oldC2)/sqrt(iS2.TR/oldTR) ));  % Rel. contrast per time (ratio of S over TR)
+    relS  = uint16(100*(iR2.absS/oldS2));           % Rel. Signal for WML
+    relC  = uint16(100*(iR2.absC/oldC2));           % Rel. Contrast between WML and tissue
+    relS_t  = uint16(100*( (iR2.absS/oldS2)/sqrt(iS2.TR/oldTR) ));  % Rel. SNR per time (ratio of S over TR^0.5)
+    relC_t  = uint16(100*( (iR2.absC/oldC2)/sqrt(iS2.TR/oldTR) ));  % Rel. CNR per time (ratio of S over TR^0.5)
     fStr = ['\\itOptimal TE:\n\\rm\\bf'         ... % Tex \bf\it\rm = bold/italic/normal; escape \ for sprintf!
             ' TE_{opt}    = %3s \n'             ... % %3.i ms
             ' S_{WML}    = %4.3f \n'            ... % %4.3f
             ' \\DeltaS_{max}  = %4.3f \n'       ... % %4.3f
             ' rS_{WML}   = %3.f%%\n'            ... % %4.3f
             ' rC(L-?)  = %3.f%%\n'              ... % %4.3f
-            ' rS/t        = %3.f%%\n'           ... % %4.3f
-            ' rC/t        = %3.f%%'             ];  % %4.3f
+            ' rSNR/t   = %3.f%%\n'              ... % %4.3f
+            ' rCNR/t   = %3.f%%'                ];  % %4.3f
     fVar = [ TEstr, iR2.absS, iR2.absC, relS, relC, relS_t, relC_t ]; % 
     figTextBox( fStr, fVar );                       % Display an info text box on the figure
     if ( frzS2 == 0 )                               % If RelZ isn't frozen (by the UI button)
@@ -249,7 +249,7 @@ end % createUI
 function createUIPanel()
     boxClr = iPr.FigClr;                            % UI panel background color (same as fig background)
     mX = 10; mY =  6;                               % x/y margins in UI panel
-    eN = 03; eW = 120; eH = 30;                     % Number of UI elements; default element width/height
+    eN = 04; eW = 120; eH = 30;                     % Number of UI elements; default element width/height
     UI2.Hpx = eN*eH + 2*mY; uiT = UI2.Hpx - mY +  3;    % UI panel height in pixels; top position for elements
     UI2.Wpx = eW + 2*mX;                              % UI panel width in pixels
     
@@ -299,6 +299,23 @@ function createUIPanel()
             'ToolTipString',    '[r] Set comparison std.', ...
             'Callback',         @setSignal_callback );  % UI to set the relative signal for comparison
 %             'Min',  0,          'Max',  1,          ... % 0/1 are default for Matlab toggles
+
+        case  4
+        uicontrol( 'Parent', UI2Bx,                 ... % ui DUR[T|S]
+            'Position', [ mX eY+1 eW 16 ],          ...
+            'Style', 'text',                        ...
+            'BackgroundColor', boxClr,              ...
+            'HorizontalAlignment', 'Left',          ...
+            'ToolTipString', '[d] Plot duration',   ...
+            'String', 'Dur.:                          ms');
+        UI2.DURS = uicontrol( 'Parent', UI2Bx,      ...
+            'Position', [ mX+40 eY+0 60 20 ],       ...
+            'Style', 'edit',                        ...
+            'Min', 50000, 'Max', 50000,             ...
+            'ToolTipString', 'Can be set manually', ...
+            'String',   DUR,                        ...
+            'Value',    DUR,                        ...
+            'Callback', @dur_set_callback           );  % UI to set DUR
         
         end % switch i
     end % for i
@@ -361,14 +378,26 @@ function setSignal_callback(~,~)                    % UI callback to toggle Free
     main();
 end % fcn
 
+function dur_set_callback(src,~)                    % UI to set DUR manually
+    val = str2val( src.String );
+    if ( ( val > TEopt ) && ( val < iS2.ETD ) )     % Allowed range
+        DUR = val;
+    else
+        DUR = iS2.ETD;                              % You can reset with a neg. value
+    end % if
+    main();
+end % fcn
+
 function keyPress_callback(~,evt)
     switch evt.Key
         case 'p'                                    % Show/hide UI panel
             masterUI_callback([],[])                % Calling with dummy values
         case 'r'                                    % Print results
             printVars_callback([],[])
-        case 'q'                                    % Focus on TR setting uicontrol
+        case 'q'                                    % Focus on TE setting uicontrol
             uicontrol( UI2.TES );
+        case 'd'                                    % Focus on DUR setting uicontrol
+            uicontrol( UI2.DURS );
         case 'a'                                    % Change active figure
             if isfield( iPr, 'Fig1' )
                 figure( iPr.Fig1    );
