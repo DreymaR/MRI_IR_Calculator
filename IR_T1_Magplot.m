@@ -4,11 +4,15 @@ function IR_T1_Magplot( TIabs )
 %   - Plot the longitudinal magnetization Mz of several tissue T1s under multiple inversion time points.
 %   - (NB: Absolute TI times are used here, not relative to readout!)
 
+%  NOTE:
+%   - 
+%
 %  TODO:
 %   - 
 %
 %  DONE:
 %   - 
+%
 
 %% INIT
 % debugInfo  = 1;                                     % Show extra info in the command window?
@@ -118,7 +122,9 @@ global IE                                             % Globals that didn't thri
     end % if T2pOn
     
     if ( iR.RCS ~= 0 )
-        y = (-1^NIT)*iR.RCS;                            % Sensible imperfect nulling depends on number of inversions
+%         fprintf( "NIT:\n" );      % DEBUG
+%         disp( NIT );              % DEBUG
+        y = (-1)^(NIT+1)*iR.RCS;                        % Sensible imperfect nulling depends on number of inversions
         line( [ 0 TRo(1) ], [ y y ],                ... % Horz. line for desired residual CSF signal (imperfect nulling)
             'Color', [ 0.929 0.694 0.125 ],         ... % (Tip: lines(#) gives the color scheme for # plot lines)
         'LineWidth', 1.0,                           ...

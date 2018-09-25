@@ -2,29 +2,36 @@ function Fig2 = IR_T2_Subplot( iT, iS2 )    % S0/T2/tags for tissues to plot; fi
 %% (D)IR MRI TE calculation
 %   - This function is called from the IR_TI_Calculator
 %   - Plot the T2 decay at readout, to determine the optimal TE.
-% 
+%
+%  NOTE:
+%   - Use symbolic solution instead of just the graphical one? Not critical.
+%
 %  TODO:
-%   - Specify subplot properly, like [ ax = subplot(1, 2, 1, 'Parent', fig); ]. This script gets the main fig handle.
+%   - Make the T2 plot a subplot instead of a new figure!? Send this script our main figure handle then.
+%       - Specify subplot properly, like [ ax = subplot(1, 2, 1, 'Parent', fig); ]?
 %       - Must then be specific about which axes I'm drawing to in each case!? Set current etc.
-%   - Find TE range for 90% (80%?) DelS. Find the point under the threshold that has a neighbor above? Or solve?
+%       - But it seems that subplots are intended to be in panels in the same window? So, less attractive?
+%   - Find TE range for 90% (80%?) DelS? Find the point under the threshold that has a neighbor above? Or solve?
 %   - Make the TE_opt calculation more robust for different cases?
-%   - CNR/t (vs TR)! Can use something like seconds(duration([0,5,57])) (but would like duration as "mm:ss")?
-%       - Simply though, just use (SNR1/SNR2)/sqrt(TR1/TR2) as a measure?
 %   - Add max TE for GM/WML contrast (for WM-DIR)
 %   - Report contrast between WML and both secondary tissues (WM and GM). Always relevant?
-%   - Symbolic solution instead of just the graphical one? Maybe not critical.
 %
 %  DONE:
 %   - Make a T2-TE figure that can be updated from the GUI panel for the current signal/plot settings
-%   - Generic S(t) formula CalcS(t)
 %   - Calculate relative SNR (abs. S(TE) for WML) and CNR (abs. deltaS(TE) for WML-WM)
+%   - CNR/t (vs TR)! Could use something like seconds(duration([0,5,57])) (but would like duration as "mm:ss")?
+%       - Simply though, just use (SNR1/SNR2)/sqrt(TR1/TR2) as a measure
+%       - This is then a measure of relative signal/contrast efficiency, as in literature
 %   - A freeze button for RelS/C so you can do multiple comparisons to the same standard setting
 %   - Use less globals! Conflict with other script when names are the same. Structs are economic.
+%
+
 
 %% INIT
 debugInfo  = 1;                                     % Show extra info in the command window?
 Tis     = iT.T2tis;
 % nTis    = size( Tis, 2 );                           % # of tissues to compare to the first one, including itself
+DUR     = 599   ; % iS2.ETD;                        % Use the sequence Echo Train Duration as plot duration? No, less.
 
 global iPr                                          % Program data struct (common global with Fig1)
 global UI2 iR2                                      % UI/tissue/times data structs (sequence struct is iS2)
@@ -53,7 +60,6 @@ if isempty( irIni2 )
     irIni2  = true  ;                               % The program has been initialized
     UI2on   = true  ;                               % Show the UI control panel
     frzS2   = 0     ;                               % Don't freeze the RelSNR at first
-    DUR     = 599   ; % iS2.ETD;                    % Use the sequence Echo Train Duration as plot duration? No, less.
     TEmin   = 14    ; % ms                          % Minimum allowed TE
     TEset   = -1.0  ;                               % The manually set TE (will be set to TEopt)
 end % if irIni2

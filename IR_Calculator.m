@@ -8,20 +8,20 @@ function IR_Calculator()
 % 
 %  NOTE:
 %   - TI times are defined vendor-style here! That is, TI1 is the full time and TI2 only the time to readout.
-%       - So TI1 = time_TI1 & TI2 = time_TI1 - time_TI2. This makes the signal formulae simpler.
-%       - Used to call the time between inversions TI1. Now it's TI1 = TI1_old + TI2.
-%   - Don't make signal equations generally symbolic rather than functions, as symexpr are slow (esp. in r2014a?)!
-%   - Anonymous function handle for CalcTI1, for easier passing to other functions such as vpasolve()? Likely not.
+%       - So TI1 = time_TI1, and TI2 = time_TI1 - time_TI2. This makes the signal formulae simpler.
 %   - There's a good explanation of inversion mathematics at http://xrayphysics.com/contrast.html
 %   - About (single) incomplete inversion, see Miho Kita et al, MRI 31(9) 2013 p 1631–1639.
 %       - http://www.sciencedirect.com/science/article/pii/S0730725X13002312
 %       - OliG: 95-99% is realistic, depending on the pulses. Nonselective IR is better. (HypSec ~98%?)
-%   - Simulated FLAIR TI is lower than the one used by Siemens/GE (for TR 5000 w/ T2prep on 1.5 T, ~1650 vs 1800 ms).
-%       - I think this is intentional, accepting a little CSF signal to gain WML signal and contrast.
-%       - Simulating (by setting T1_n to ~7000 ms) gives 5-6% residual CSF signal, but +20% signal/contrast for WML!
+%   - Simulated FLAIR TI is lower than the one used by Siemens/GE
+%       - For TR 5000 w/ T2prep on 1.5 T, simulation gives ~1650 vs 1800 ms in the vendor settings.
+%       - Is this intentional, accepting a little CSF signal to gain WML signal and contrast?
+%       - Seems not! The CSF signal is really nulled in the images and simulated null times do give imperfect nulling.
+%       - Simulating 5-6% residual CSF signal does give +20% signal/contrast for WML!
 %       - Maybe the somewhat low effective (or "apparent") TE is a further tweak to improve SNR/CNR.
-%       - Not only! The CSF signal is really nulled in the images.
 %       - For Philips, the simulation is in agreement with their values!
+%   - Don't make signal equations generally symbolic rather than using functions, as symexpr are slower.
+%   - Anonymous function handle for CalcTI1, for easier passing to other functions such as vpasolve()? Likely not.
 % 
 %  TODO:
 %   - Better Bloch simulation of curves! Simply let Mz -> [Mz,Mt], and move Mz->Mt for excitation etc.
@@ -29,17 +29,11 @@ function IR_Calculator()
 %   - Fix the T1null curves for T2prep. The TI values are right but the red/blue curves don't follow.
 %   - Rewrite with handles structure ( use guihandles(), guidata() etc ) like GUIDE; check GUIDE first.
 %   - Use less globals! Maybe also a struct/cell array for a set of properties/settings? Doesn't work for some vars?
-%   - Include "T1W WM/WML" in DIR nulling options!?
-%       - Instead of the Mode button, make it show "IR"/"DIR", depending.
-%       - Then, with DIR, add another button for "T1W nulling"
 %   - Include AtleB's ASL BS TI optimalization? Use a press button for it, as it takes some time to run.
-%   - Implement incomplete spin lock during readout? CPMG inversion pulses may be 120-150° instead of 180°.
-%       - So readout CPMG inversion efficiency is then -cos(FA)=50-87%
+%   - Implement incomplete spin lock during readout? TSE refocus pulses may be 120-150° or even 40-60° instead of 180°.
+%       - So readout CPMG inversion efficiency is then -cos(FA)=50-87% using 120°. It's not (only) inversion!
 %       - Merely simulating incomplete inversions doesn't lead to a change in behaviour, as spin lock is still strong.
-%       - Likely we'll need a more thorough Bloch simulation to account for all the spin components.
-%       - Or is it true that the T1 recovery is completely negligible during a FSE train, even with low FAs?
-%   - Make the T2 plot a subplot instead of a new figure!? Send its script our figure handle.
-%       - But it seems that subplots are intended to be in panels in the same window?
+%       - We'll need a more thorough Bloch simulation to account for all the spin components.
 % 
 %  DONE:
 %   - A setting for residual CSF percentage. Let's say we accept 5% (DIR CSF signal = -0.05) to get better contrast...?
