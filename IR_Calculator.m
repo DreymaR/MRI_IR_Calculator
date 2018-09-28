@@ -819,13 +819,13 @@ function createUIPanel()
             'BackgroundColor', boxClr,              ...
             'HorizontalAlignment', 'Left',          ...
             'ToolTipString', 'Ref. values for T1s', ...
-            'String', 'B0:'                         );
+            'String', 'T1:'                         );
         iUI.B0S = uicontrol( 'Parent', iUIBox,      ...
             'Position', [ mX+22 eY+0 eW-22 23 ],    ... % Note: Height setting won't change the actual height here
             'Style', 'popup',                       ...
             'String',   iPr.B0str,                  ...
             'Value',    iPr.B0sel,                  ...
-            'Callback', @b0_sel_callback            );  % UI to set B0 (relaxation times)
+            'Callback', @b0_sel_callback            );  % UI to set relaxation times based on B0 and ref.
 
         case  8
         iUI.Tn1T = uicontrol( 'Parent', iUIBox,     ... % ui Tn1[T|S]
@@ -1006,7 +1006,7 @@ function plotT2_callback(~,~)                       % Run T2 plot (in separate s
     % iR.S0(1:4), Ts.T(2,:), Ts.Tag(1,1:4), [ 4 1 2 ], iS )    % S0/T2/tags for a set of tissues to plot
 end % fcn
 
-function b0_sel_callback(src,~)                     % UI to set B0 (rel. times)
+function b0_sel_callback(src,~)                     % UI to set rel. times based on B0/ref.
     setRelaxTimes( src.Value );                     % Was get(src,'Value') pre-R2014b
     main();
 end % fcn
