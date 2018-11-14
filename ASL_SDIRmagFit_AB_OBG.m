@@ -1,4 +1,4 @@
-function DIRmagFitASL_AB_OBG()                         % Mt = DIRmagFitASL(nInv)
+function ASL_SDIRmagFit_AB_OBG()                         % Mt = DIRmagFitASL(nInv)
 %% From Atle B: Calculate and plot optimal dual TI for background suppression (ASL)
 % Uses ga(fitnessfunction,nvars,LB,UB) genetic algorithm to find multiple TI.
 % This is the main script - run this one. It calls magFunc for fitting and magPlot for plotting.
@@ -146,13 +146,13 @@ end
 
 % Decorate the plot with ASL relevant stuff
 function ASLPlotDeco()
-    figtxt = [  'ASL BS optimization for ',         ... % Figure title
+    figtxt = [  'ASL BgSuppr. optimization for ',   ... % Figure title
                 'LD = ',  int2str(TAG), ' ms, ',    ... % Labeling Duration
                 'PLD = ', int2str(PLD), ' ms:'      ];  % Post Label Delay
     title( figtxt,                                  ...
         'FontSize', 14                              );
     
-    for i = 0.005:0.010:0.025
+    for i = 0.005:0.010:0.040                           % Draw this dotted line several times for an "RF comb" look
         line( [ 1 TAG ], [ i i ],                   ... % Horizontal line to represent ASL tagging
             'Color', [ 0.9 0.3 0.3 ],               ... % 'black'
             'LineWidth', 3,                         ... % Tip: Line width affects dot distance
@@ -186,6 +186,12 @@ function ASLPlotDeco()
         'LineWidth', 0.5,                           ...
         'LineStyle', '-'                            );
 end
+
+line( [ 1 TAG ], [ 0.005 0.005 ],               ... % Horizontal line to represent ASL tagging
+    'Color', [ 0.9 0.3 0.3 ],                   ... % 'black'
+    'LineWidth', 3,                             ... % Tip: Line width affects dot distance
+    'DisplayName', ' ASL labeling',             ... % Tip: If declared after legend, gets in it
+    'LineStyle', ':'                            );
 
 % Quick-n-dirty results output
 function MoreOutput( saveFigImg )                       % ( TAG, PLD ), ( MagZ, Mtot, TI )

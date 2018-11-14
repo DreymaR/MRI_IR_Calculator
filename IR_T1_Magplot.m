@@ -8,7 +8,7 @@ function IR_T1_Magplot( TIabs )
 %   - 
 %
 %  TODO:
-%   - 
+%   - Add the Mz_end correction for FLAIR if iS.Vnd == "GE"? Must sort out which tissues to correct for then
 %
 %  DONE:
 %   - 
@@ -22,7 +22,7 @@ global IE                                             % Globals that didn't thri
 %% MAIN
     NIT = length(TIabs)-2;                          % # of inversion time points, without readout time and duration
     if ( iS.T2pOn )
-        TIabs(2:NIT+1) = TIabs(2:NIT+1) + iS.T2p;   % We simulate T2 prep first in the sequence, so add it to TI
+        TIabs(2:NIT+1) = TIabs(2:NIT+1) + iS.T2p;   % We simulate T2 prep first in the sequence, so add it to TIs
     end % if
     TIn = TIabs(1:NIT); DUR = TIabs(NIT+2);         % Actual inversion time points & total duration for the plot
     TIR = TIabs(NIT+1); xRo = double([ TIR TIR ]);  % Readout time (=TI)
@@ -55,14 +55,29 @@ global IE                                             % Globals that didn't thri
         RTI(i) = TRo(1) + round(i*iS.ESP);          % Array of readout refocus times. TODO: Avoid rounding?
     end % for
     
-    its=3; iR.MzIt = ones(Ntis,its);                % Iterate to get to a steady state
+    its=3; iR.MzIt = ones(Ntis,its);                % Iterate to get to a steady state. Only need to run twice?
     for i = 1:its                                   % Iteration loop (Note: Needs only two TR if Mz(TRo)=0)
         Mz(:,1) = Mz(:,DUR);                            % The starting magnetization (before first inv.) is MagZ(TR)
         for j = 2:DUR                                   % Step through all time points
-            tpt = (j-2)*dT;                             % Was (j-1)*dT, but I want the time point 0 to be defined
+            tpt = double( (j-2)*dT );                   % Was (j-1)*dT, but I want the time point 0 to be defined
             Mz1 = Mz(:,j-1);                            % MagZ at the previous time point
-            if ismember( tpt, TIn )                     % Inversion time, so invert the Mz (accounting for Inv.Eff.)
-                Mz(:,j) = -IE*Mz1;                      % (was any(Ts == TIn(:)) before)
+            if ismember( tpt, TIn )                     % Inversion time (was any(Ts == TIn(:)) earlier)
+                IPBeg = tpt; IPEnd = tpt + iS.IPD;      % Pulse time (For now, I use TI as the start of the pulse...)
+%                 if ( IPBeg < 0 )
+%                     IPBeg2 = IPBeg + iS.TR;             %   WIP: If some pulse time is < 0, move it to the end of TR?!?
+%                     IPEnd2 = IPEnd + iS.TR;             %   Or, should I just use positive times (GE style)?!?
+%                 else % ( IPEnd > iS.TR )
+%                     IPBeg2 = IPBeg - iS.TR;
+%                     IPEnd2 = IPEnd - iS.TR;
+%                 end % if
+                MzAtIP = Mz1;
+            end % if tpt                                % (Used a new if here because that seems more robust)
+            if ( tpt >= IPBeg ) && ( tpt < IPEnd )
+                rPt = ( tpt*2 - (IPBeg+IPEnd) )/( IPEnd-IPBeg );   % Scan the "relative pulse time" [-1,1]
+                rMz = -atan( 6.0*rPt )/atan( 6.0 );     % A generic scaled sigmoid. WIP: Not sure if it's right for Mz!
+                Mz(:,j) = MzAtIP.*(rMz*(1+IE)/2 + (1-IE)/2);  % Account for Inv.Eff.
+            elseif ( tpt == IPEnd ) % || ( tpt == IPEnd2 )
+                Mz(:,j) = -IE*MzAtIP;                   % Invert Mz, accounting for Inv.Eff. (not trusting the sigmoid)
             elseif ( tpt == TRo(1) )                    % Readout time
                 iR.MzTI = Mz1;                          % MagZ at readout
                 iR.S0   = sin(iS.FAx*pi/180)*Mz1;       % Signal strength at readout
@@ -77,7 +92,7 @@ global IE                                             % Globals that didn't thri
             elseif ( tpt == TRo(2) )                    % Readout end
                 Mz(:,j) = Mz1 + iS.Rew*MzRo;            % A drive pulse reclaims some excitation signal as Mz? Or can it?!?
 %             elseif ( Ts > iS.TR - iS.T2p )              % T2 preparation (effectively decays Mz with T2)
-            elseif ( tpt < iS.T2p ) && ( iS.T2pOn )     % T2 preparation (effectively decays Mz with T2)
+            elseif ( tpt > iS.IPD ) && ( tpt < iS.T2p + iS.IPD ) && ( iS.T2pOn )     % T2 preparation (effectively decays Mz with T2)
                 for k = 1:Ntis                          % Can't assign all tissues at once with exp, so use a loop
                     Mz(k,j) = Mz(k,j-1)*exp(-dT/T2Plt(k)); % 
                 end % for k
@@ -103,23 +118,38 @@ global IE                                             % Globals that didn't thri
 %     set( gca, 'XTick', [] );                        % Remove x axis ticks
 %     set( gca, 'YTick', [] );                        % Remove y axis ticks
 
-    line( xlm, [ 0 0 ],                         ... % Zero line
-        'Color', 'black',                       ...
-        'LineWidth', 0.7,                       ...
-        'LineStyle', ':'                        );
-    line( TRo, [ -0.975 -0.975 ],               ... % Horizontal line representing readout
-        'DisplayName', 'Echo train',            ...
-        'Color', [ 0.3 0.6 0.3 ],               ... % 'black'
-        'LineWidth', 8,                         ...
-        'LineStyle', '-'                        );
+    line( xlm, [ 0 0 ],                             ... % Zero line
+        'Color', 'black',                           ...
+        'LineWidth', 0.7,                           ...
+        'LineStyle', ':'                            );
+    lineY = [ -0.975 -0.975 ]; lineW  = 10;             % Y position and width for horz. marker lines
+    line( TRo, lineY,                               ... % Horizontal line representing readout
+        'DisplayName', 'Echo train',                ...
+        'Color', [ 0.3 0.6 0.3 ],                   ...
+        'LineWidth', lineW,                         ...
+        'LineStyle', '-'                            );
     
     if ( iS.T2pOn )
-        line( [ 0 iS.T2p ], [ -0.975 -0.975 ],      ... % Horizontal line representing T2prep
+        line( [ 0 iS.T2p ]+iS.IPD, lineY,           ... % Horz. line representing T2prep
             'DisplayName', 'T2 prep.',              ...
             'Color', [ 0.9 0.6 0.3 ],               ...
-            'LineWidth', 8,                         ...
+            'LineWidth', lineW,                     ...
             'LineStyle', '-'                        );
     end % if T2pOn
+
+    for i = 1:NIT
+    line( [ TIn(i) TIn(i)+iS.IPD+10 ], lineY,       ... % Horz. line(s) representing inv. (a little extra for display)
+        'DisplayName', 'Inversion',                 ...
+        'Color', [ 0.5 0.3 0.7 ],                   ...
+        'LineWidth', lineW,                         ...
+        'LineStyle', '-'                            );
+%         'LineJoin', 'chamfer',                      ... % Note: This doesn't round corners unless they're joined.
+    end % for i
+    
+%     line( xRo, ylm,                             ... % Vertical line at TEeff (=TI)
+%         'Color', 'black',                       ... % (Tip: If declared after legend, the line appears in it)
+%         'DisplayName', 'TI_{1}',                ... % 'TE_{eff}'
+%         'LineStyle', ':'                        );
     
     if ( iR.RCS ~= 0 )
 %         fprintf( "NIT:\n" );      % DEBUG
@@ -130,20 +160,6 @@ global IE                                             % Globals that didn't thri
         'LineWidth', 1.0,                           ...
         'LineStyle', '-.'                            );
     end % if iR.RCS
-
-    for i = 1:NIT
-    line( [ TIn(i) TIn(i) ], [ -1.00 -0.92 ],   ... % Vertical line representing inversion
-        'DisplayName', 'Inversion',             ...
-        'Color', [ 0.5 0.3 0.7 ],               ...
-        'LineWidth', 5,                         ...
-        'LineJoin', 'chamfer',                  ... % Note: This doesn't round corners unless they're joined.
-        'LineStyle', '-'                        );
-    end % for i
-    
-%     line( xRo, ylm,                             ... % Vertical line at TEeff (=TI)
-%         'Color', 'black',                       ... % (Tip: If declared after legend, the line appears in it)
-%         'DisplayName', 'TI_{1}',                ... % 'TE_{eff}'
-%         'LineStyle', ':'                        );
     
     LegS = strings(1,Ntis);                             % Figure legends
     for i = 1:Ntis
