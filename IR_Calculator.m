@@ -10,9 +10,11 @@ function IR_Calculator()
 %   - TI times are defined vendor-style here! That is, TI1 is the full time and TI2 only the time to readout.
 %       - So TI1 = time_TI1, and TI2 = time_TI1 - time_TI2. This makes the signal formulae simpler.
 %   - Pulse durations are calculated into Ti times, but not T2prep except when reporting Siemens times. Vendor specific.
-%   - There's a good explanation of inversion mathematics at http://xrayphysics.com/contrast.html
+%   - Relaxation times vary widely in literature. We have used values from GE's scanner implementation, and other sources.
+%       - Lalande et al, MRI 2016:  https://www.sciencedirect.com/science/article/pii/S0730725X16301266
+%   - There's a good explanation of simple inversion mathematics at http://xrayphysics.com/contrast.html
 %   - About (single) incomplete inversion, see Miho Kita et al, MRI 31(9) 2013 p 1631–1639.
-%       - http://www.sciencedirect.com/science/article/pii/S0730725X13002312 (needs access)
+%       - Kita et al, MRI 2013:     https://www.sciencedirect.com/science/article/pii/S0730725X13002312
 %       - https://www.seichokai.or.jp/fuchu/dept1603.php (partially in Japanese; contains formulae)
 %       - OliG: 95-99% is realistic, depending on the pulses. Nonselective IR is better. (HypSec ~98%?)
 %   - Simulated TI_FLAIR/TI1 were lower than the ones used by Siemens/GE, typically by 150 ms @ TR 5 s w/ T2prep
@@ -27,21 +29,14 @@ function IR_Calculator()
 %   - Anonymous function handle for CalcTI1, for easier passing to other functions such as vpasolve()? Likely not.
 % 
 %  TOFIX:
+%   - Store the T2prep time when switching to GE/Sie, so you get it back for no vendor.
+%   - T_Inv hopper opp igjen til defaultverdi stadigvekk?!?
 %   - Mathias Engström: GE source has T1_CSF = 4270 ms, T2_CSF = 2400 ms. What about WM/GM values?
-%   - Pulses should realistically be centered around TI not starting there? Problem: The first pulse at t=0
-%   - At (unrealistically) high inversion pulse duration, the second tissue isn't nulled! CSF isn't quite.
-%   - For SIR, just adding one pulse duration (iS.IPD) works. For DIR, not sure what's needed. Work it out!
-%   - For plots etc, might be an idea to have a iS.IPT total value that's NInv*s.IPD?
+%   - Philips center pulses around TIs, not starting there (so their t=0 is not ours!). Correct their times accordingly.
 %   - SetRelaxTimes(), SetMode() and setT1n() are an interdependent mess! Merge at least the latter two?!?
 % 
 %  TODO:
-%   - Vendor setting, so sequence details and time calculations can be adjusted accordingly.
-%   - Pulse durations. HypSec inv. pulses are typically ~15 ms, which is significant
-%       - No T1 during pulses?! So subtract pulse dur. from TReff
-%       - Simulate the first pulse as starting at time = 0 (unlike Phi; correct for that in their times)?
-%       - Or, start at t = 0 - <half the pulse dur.>? Then subtract that from the end.
-%       - In the GUI, split panel with the InvEff line?
-%   - In the mag plot, just let the z mag drop (sigmoidally?) to its new value during the pulse duration? -tan(t)?
+%   - A tool to calculate optimal TR w/ respect to CNR/t given the settings?
 %   - If the GUI panel were wider, could have two fields per line?
 %   - Better Bloch simulation of curves! Simply let Mz -> [Mz,Mt], and move Mz->Mt for excitation etc.
 %       - Plot Mt with dotted lines?
@@ -60,6 +55,11 @@ function IR_Calculator()
 %       - We'll need a more thorough Bloch simulation to account for all the spin components.
 % 
 %  DONE:
+%   - Vendor setting, so sequence details and time calculations can be adjusted accordingly.
+%   - Pulse durations. HypSec inv. pulses are typically ~15 ms, which is significant (GE uses pw_rf0 = 16ms)
+%       - No T1 during pulses?! So subtract pulse dur. from TReff
+%       - Simulate the first pulse as starting at time = 0 (unlike Phi; correct for that in their times)
+%       - In the mag plot, just let the z mag drop (sigmoidally?) to its new value during the pulse duration. -tan(t)?
 %   - A setting for residual CSF percentage. Let's say we accept 5% (DIR CSF signal = -0.05) to get better contrast...?
 %   - Find DIR TI1 & TI2 such that two given T1 times are nulled.
 %       - WN: Then we can see any discrepancies compared to vendor (GE/Sie.) calculations!
@@ -128,7 +128,7 @@ iS.Vnd  = ""        ;                               % Vendor name (for sequence 
 iS.TR   = 6000.0    ; % ms                          % Repetition time, as float
 iS.ETD  =  800.0    ; % ms                          % Readout time T_Ro = ETL * ESP (GE: Check CVs after Download)
 iS.IEf  =   98      ; % %                           % Inversion efficiency in percent (are GE's SECH pulses ~98%?)
-iS.IPD  =   15.0    ; % ms                          % Inversion pulse duration (GE/Phi used 15/17 ms HypSec in tests)
+iS.IPD  =   16.0    ; % ms                          % Inversion pulse duration (GE/Phi used 16/17 ms HypSec in tests)
 iS.T2pOn = true     ;                               % WIP: Turn this off when T1n is set manually (as T2 is then unknown)?
 iS.T2p  =    0.0    ; % ms                          % T2 preparation time
 iS.TOb  =   25.0    ; % ms  % WIP: Relate to iS.IPD % TI1 outboard (Siemens: Add at least 23 ms; +10? ms for T2p?)
@@ -137,7 +137,7 @@ iS.ESP  = 3.65; iS.IET = 0.50; % iS.ETL = 122;      % Echo Spacing, Echo Train L
                                                     % WIP: Just assuming incomplete inversion doesn't lead to anything!
                                                     % A proper Bloch simulation, at least w/ [ Mz, Mt ] is required.
                                                     % Actual flip angles are swept from about 10-170° to preserve Mz!
-iR.RCS  =    0.0    ; % fraction                    % Residual CSF signal desired. This may be a means to increase CNR.
+iR.RCS  =    0.0    ; % fraction                    % Residual CSF signal at readout. Partial nulling may increase CNR.
 iS.Rew  =    0.0    ; %                             % TODO: Rewinder after readout, regaining some of the pre-readout Mz?
 iUI.Show    = true  ;                               % Show the UI control panel
 iPr.Mode    =    1  ;                               % Start in mode 1, then keep the run mode over reruns
@@ -184,7 +184,7 @@ function mainSIRNul( T1z1 )
     end % if
     Mze = Ts.Mze( iPr.TsSel );                      % End Mz for the tissue (GE value for XETA/Cube refocusing train)
     iT.Ti1n = CalcTInT1( iT.T1z, E2, 1-Mze );       % Calc. TI to null T1z
-    iT.Ti1n = uint16( iT.Ti1n + iS.IPD );           % Add the inversion pulse duration; make value int for plot display
+    iT.Ti1n = uint16(round( iT.Ti1n + iS.IPD ));    % Add the inversion pulse duration; make value int for plot display
     
     TInts = [ 0, iT.Ti1n, iS.TR ];                  % SIR: Inversion is at t = 0, then readout at TI
     IR_T1_Magplot( TInts );                         % Plot Z magnetization (Mz) of several tissue T1s over time
@@ -237,8 +237,8 @@ function mainDIRNul( T1z1, T1z2 )
     Tis = [ Ts.T(:,3), Ts.T(:,iPr.TsSel) ];         % CSF and selected tissue (needed for T2prep)
     E2 = CalcPE2( Tis );                            % Calculate E2 if using T2prep (=1 otherwise)
     [ iT.Ti1n, iT.Ti2n ] = Find2TIn2T1([T1z1,T1z2],E2); % Inversion times that null 2 T1
-    iT.Ti1n = iT.Ti1n + iS.IPD*2;                   % Add the inversion pulse durations
-    iT.Ti2n = iT.Ti2n + iS.IPD;                     % --"--
+    iT.Ti1n = uint16(round( iT.Ti1n + iS.IPD*2 ));  % Add the inversion pulse durations
+    iT.Ti2n = uint16(round( iT.Ti2n + iS.IPD   ));  % Cast as int for plot display; ceil()/round() don't change syms!
     
     TInts = [ 0, (iT.Ti1n-iT.Ti2n), iT.Ti1n, iS.TR ];   % DIR: Vector of all time points (inversion, readout and end)
     IR_T1_Magplot( TInts );
@@ -306,8 +306,8 @@ function T1z2 = mainT1WNul()                        % T1_nulled = T1WNul( T1_CSF
     iT.Ti1n = uint16( CalcTi1D(iT.Ti2n,T1C,E2C)  ); % TI1(TI2) calc. by function (uint to avoid e+ notation in fig. text)
 %     iT.Ti1n = uint16(TI1s( iT.Ti2n ));              % TI1(TI2) calc. by symbolic expr. (slower?!)
     
-    % WIP: What E2 would GE operate with for a fictive tissue? WM/E2(2)? For now, let's ignore T2prep w/ E=1
-    %      Judging from observation, that's what GE does too!
+    % NOTE: GE operates with a guessed T2 when T1 is set manually. DV25: T2wm; RX27: T2gm. But is it used for T2prep?
+    % WIP: For now, let's ignore T2prep w/ E=1. Judging from observation, that's what GE does too!?
     iT.Tn2 = uint16( FindT1null([iT.Ti1n,iT.Ti2n],1) ); % Second tissue nulled by DIR. UInt for display.
     T1z2 = iT.Tn2;                                  % This function outputs the fictive T1 nulled
     iS.newS = S0_DIR(iT.Ti2n,1);                    % WM signal at readout; = WML signal here
@@ -442,12 +442,11 @@ function S0_nD      = CalcS0for0( Ti2, T1d, E2d )   % Calc. S0 from a DIR T1 fou
     S0_nD = 1 - (1+IE)*exp(-Ti2/T1) + IE*(1+IE*E2)*exp(-Ti1/T1) - IE^2*E2*exp(-iS.TRef/T1);
 end % fcn
 
-function [ Ti1n, Ti2n ] = Find2TIn2T1( T1d, E2 )    % Find TI1/TI2 that null two T1 (e.g., CSF and WM)
+function [ Ti1n, Ti2n ] = Find2TIn2T1( T1d, E2 )    % Find TI1/TI2 that null two T1 (e.g., CSF and WM) in DIR
     T1 = FoS(T1d);                                  % Cast input as float unless it's a sym
 %     Ti2n = vpasolve( CalcS0( [ CalcTi1D(t,T1(1),E2(1)) , t ],T1(2),E2(2) ), t );
     Ti2n = vpasolve( CalcS0for0( t, T1, E2 ), t );
-    Ti1n = uint16( CalcTi1D( Ti2n,T1(1),E2(1) ) );  % Make value int for plot display; round() doesn't change the sym!
-    Ti2n = uint16( Ti2n );                          % --"--
+    Ti1n = CalcTi1D( Ti2n,T1(1),E2(1) );
 end % fcn
 
 function T1WnTi2    = FindTi2nT1W( T1_CWL, E2 )     % Find TI2 to null CSF and the DIR T1 weighting between WM and WML
@@ -479,7 +478,7 @@ function SetMode( mode )                            % Sets the run mode and rese
         case 3                                      % T1W-DIR default: (Null out CSF as the longest T1)
     end % switch
     iPr.Mode = mode;                                % Make the mode setting global
-    if ( oldMode ~= 3 )
+    if ( mode ~= 3 ) && ( oldMode ~= 3 )
         SetRelaxTimes( iPr.B0sel )                  % Vendor implementation and mode may affect relaxation time settings
     end % if
 end % fcn
@@ -743,6 +742,14 @@ function IR_CreateUI()                                 % Display a button to sho
 %         iUI.Vnd.String = iS.Vnd;
 %     end % if
     
+    iUI.Stp = uicontrol( 'Style', 'pushbutton', ... % ui Stp
+        'String'    , 'Step TR'             ,   ...
+        'FontWeight', 'bold'                ,   ...
+        'ToolTipString', '[d] [DEBUG]'      ,   ...
+        'Units'     , 'normalized'          ,   ...
+        'Position'  , [ uiX uiY-7*eS eW eH ],   ...
+        'Callback'  , @debug_callback           );  % UI to debug by increasing TR in steps
+
     createUIPanel();
     switch iUI.Show
         case true ; iUIBox.Visible = 'on';
@@ -982,7 +989,7 @@ function createUIPanel()
             'Style', 'text',                        ...
             'BackgroundColor', boxClr,              ...
             'HorizontalAlignment', 'Left',          ...
-            'ToolTipString', 'Desired rest S(CSF)', ...
+            'ToolTipString', 'Residual signal',     ...
             'String', 'Res.S:                 %'    );
         uicontrol( 'Parent', iUIBox,                ...
             'Position', [ mX+40 eY+0 40 20 ],       ...
@@ -1112,6 +1119,11 @@ end % fcn
 function tr_set_callback(src,~)                     % UI to set TR
     iS.TR = str2val( src.String );                  % str2double( src.String );
     Lim = iS.ETD + 5; if iS.TR < Lim, iS.TR = Lim; end  % TR > T_Read
+    main();
+end % fcn
+
+function debug_callback(src,~)                     % UI to step TR (DEBUG)
+    iS.TR = iS.TR + 1000;
     main();
 end % fcn
 
@@ -1245,6 +1257,8 @@ function keyPress_callback(~,evt)
             plotT2_callback([],[])
         case 'v'                                    % Switch vendor implementation
             vendor_callback([],[])
+        case 'd'                                    % Step TR (DEBUG)
+            debug_callback([],[])
         case 't'                                    % Switch mode
             switch iPr.Mode
                 case 1
