@@ -1,4 +1,12 @@
-# DIR_Calc_TI_MatLab
+# MRI_IR_Calculator_MatLab
 
-MR DIR TI calculator made in MatLab, by GadOE (Øystein Bech Gadmar)
-Based on original code by Atle Bjørnerud, with the help of Wibeke Nordhøy
+## MRI (D)IR TI/T1++ calculator for MatLab, by GadOE (Ã˜ystein Bech Gadmar)
+### Based on original code by Atle BjÃ¸rnerud, with the help of Wibeke NordhÃ¸y
+
+Just run the main .m file in Matlab (tested in R2018).
+
+For more info, see comments in the IR_Calculator.m file.
+
+---
+Have fun inverting!
+Ã˜ystein

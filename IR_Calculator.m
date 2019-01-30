@@ -1,5 +1,5 @@
 function IR_Calculator()
-%% (D)IR MRI TI/T1 calculation
+%% (D)IR MRI TI/T1++ calculations
 %   - In mode 1 & 2, find TI time(s) that null given T1(s) in DIR & 1IR (FLAIR/STIR/etc).
 %   - In mode 3, calculate/plot relative signal strength for WM & WML as a function of TI2 in a DIR sequence,
 %       - find TI2 and TI1(TI2) such that there is no T1 weighting between WM & WML while nulling CSF,
@@ -11,10 +11,10 @@ function IR_Calculator()
 %       - So TI1 = time_TI1, and TI2 = time_TI1 - time_TI2. This makes the signal formulae simpler.
 %   - Pulse durations are calculated into Ti times, but not T2prep except when reporting Siemens times. Vendor specific.
 %   - Relaxation times vary widely in literature. We have used values from GE's scanner implementation, and other sources.
-%       - Lalande et al, MRI 2016:  https://www.sciencedirect.com/science/article/pii/S0730725X16301266
+%       - Lalande et al, MRI 2016: https://www.sciencedirect.com/science/article/pii/S0730725X16301266
 %   - There's a good explanation of simple inversion mathematics at http://xrayphysics.com/contrast.html
 %   - About (single) incomplete inversion, see Miho Kita et al, MRI 31(9) 2013 p 1631–1639.
-%       - Kita et al, MRI 2013:     https://www.sciencedirect.com/science/article/pii/S0730725X13002312
+%       - Kita et al, MRI 2013: https://www.sciencedirect.com/science/article/pii/S0730725X13002312
 %       - https://www.seichokai.or.jp/fuchu/dept1603.php (partially in Japanese; contains formulae)
 %       - OliG: 95-99% is realistic, depending on the pulses. Nonselective IR is better. (HypSec ~98%?)
 %   - Simulated TI_FLAIR/TI1 were lower than the ones used by Siemens/GE, typically by 150 ms @ TR 5 s w/ T2prep
@@ -25,13 +25,10 @@ function IR_Calculator()
 %       - Upon checking GE 3D-FSE source, turns out the reason was compensations for CSF Mz @ end of readout.
 %       - GE uses a Mz_end "Mz at the end of XETA/CUBE refocusing train, assuming 130-deg max flip", only for FLAIR
 %       - GE seemingly uses artificially high T1csf for DIR in lieu of explicit Mz_end calculations?
-%   - Don't make signal equations generally symbolic rather than using functions, as symexpr are slower.
-%   - Anonymous function handle for CalcTI1, for easier passing to other functions such as vpasolve()? Likely not.
 % 
-%  TOFIX:
-%   - Store the T2prep time when switching to GE/Sie, so you get it back for no vendor.
-%   - T_Inv hopper opp igjen til defaultverdi stadigvekk?!?
-%   - Mathias Engström: GE source has T1_CSF = 4270 ms, T2_CSF = 2400 ms. What about WM/GM values?
+%  TOFIX/WIP:
+%   - For 7T w/o T2Prep, no T1-nulled solution is found below TReff ~> 12 s. But there is one!? Find it?
+%   - Correct SNR/CNR for field strength (the nominal increase is max. prop. to B0... or?)
 %   - Philips center pulses around TIs, not starting there (so their t=0 is not ours!). Correct their times accordingly.
 %   - SetRelaxTimes(), SetMode() and setT1n() are an interdependent mess! Merge at least the latter two?!?
 % 
@@ -83,6 +80,11 @@ function IR_Calculator()
 %   - Simulate "T2 prep", in which shorter T2 times are dephased so their signal becomes nearly saturation recovery.
 %       - Allow T2 entry? Crowds the UI. Alternatively, only emulate T2prep if times aren't set manually? Or ignore.
 %   - Found and implemented T1/T2 values for WM/GM/CSF from GE 3dfse source code.
+%
+%  ONHOLD:
+%   - Don't make signal equations generally symbolic rather than using functions, as symexpr are slower.
+%   - Anonymous function handle for CalcTI1, for easier passing to other functions such as vpasolve()? Likely not.
+
 
 %% INIT
 % global debug; if isempty(debug); debug = 0; end % if
@@ -94,6 +96,11 @@ debugInfo  = 1;                                     % Show extra info for debugg
 
 global iPr iUI iS Ts iT iR                          % Program/UI/system/tissue/times/results data structs
 global ircInit iUIBox IE                            % Globals that didn't thrive in structs or need short names
+
+[pathstr,~,~]=fileparts(mfilename('fullpath'));     % [pathstring,name,extension]
+addpath(genpath(pathstr));                          % Add all subfolders to search path
+rmpath(genpath([pathstr filesep '.git']));          % Remove unnecessary search path
+clear pathstr
 
 % sSz = get(0,'ScreenSize');                          % Get the screen size (actually, in R2015b+ pixels are 1/96")
 fSz = 10.80; % sSz(4)/100.00;                       % Scaling factor for figures, ?1.0% of screen size
@@ -127,7 +134,7 @@ if isempty( ircInit )
 iS.Vnd  = ""        ;                               % Vendor name (for sequence adjustments)
 iS.TR   = 6000.0    ; % ms                          % Repetition time, as float
 iS.ETD  =  800.0    ; % ms                          % Readout time T_Ro = ETL * ESP (GE: Check CVs after Download)
-iS.IEf  =   98      ; % %                           % Inversion efficiency in percent (are GE's SECH pulses ~98%?)
+iS.IEf  =  100      ; % %                           % Inversion efficiency in percent (are GE's SECH pulses ~98%?)
 iS.IPD  =   16.0    ; % ms                          % Inversion pulse duration (GE/Phi used 16/17 ms HypSec in tests)
 iS.T2pOn = true     ;                               % WIP: Turn this off when T1n is set manually (as T2 is then unknown)?
 iS.T2p  =    0.0    ; % ms                          % T2 preparation time
@@ -568,7 +575,7 @@ function SetRelaxTimes( B0opt )
             iS.B0  = 3.0;
             T1_WM  =  825.0;            % 3.0 T value from GE 3dfse source code
             T1_GM  = 1400.0;            % 3.0 T --"--
-            T1_CSF = 4270.0;            % 3.0 T --"-- (Mathias Engström)
+            T1_CSF = 4270.0;            % 3.0 T --"-- (Mathias Engström, GE)
             if ( iS.Vnd == "GE" ) && ( iPr.Mode ~= 1 )
                 T1_CSF = 5000.0;        % GE sets a longer T1_CSF for DIR only! It probably compensates for Mz_end.
             end % if
@@ -576,7 +583,7 @@ function SetRelaxTimes( B0opt )
             T1_Fat =  250.0;            % 3.0 T value from GE 3dfse source code (300 ms for InHance only?)
             T2_WM  =   60.0;            % 3.0 T --"--
             T2_GM  =   70.0;            % 3.0 T --"--
-            T2_CSF = 2400.0;            % 3.0 T --"-- (Mathias Engström)
+            T2_CSF = 2400.0;            % 3.0 T --"-- (Mathias Engström, GE)
             TisStr(4) = "(MS/WML)";     % (This value was cited from elsewhere)
         case 5                  % 1.5 T (MRIQ); MRIquestions.com and other online resources
             iS.B0  = 1.5;
@@ -1085,6 +1092,7 @@ function vendor_callback(~,~)                       % Switch between vendor impl
     switch iS.Vnd
         case ""                                     % ->
             iS.Vnd = "GE";
+            iS.T2pOld = iS.T2p;                     % Store the current T2 prep time
             iS.T2p = 200.0;                         % GE uses this value consistently
         case "GE"                                   % ->
             iS.Vnd = "Siemens";
@@ -1094,7 +1102,7 @@ function vendor_callback(~,~)                       % Switch between vendor impl
 %             iS.T2p = 125.0;                         % Phi uses this value as default
         case "Siemens"                              % <<-
             iS.Vnd = "";
-            iS.T2p = 0.0;                           % (You can set the T2prep time manually afterwards)
+            iS.T2p = iS.T2pOld;                     % Retrieve the previous T2 prep time
     end % switch                                    % Note that the figure title shows the active vendor
     SetRelaxTimes( iPr.B0sel )                      % Vendor implementation and mode may affect relaxation time settings
     main();
