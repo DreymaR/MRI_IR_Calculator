@@ -7,31 +7,33 @@ function Fig2 = IR_T2_Subplot( iT, iS2 )    % S0/T2/tags for tissues to plot; fi
 %   - Use symbolic solution instead of just the graphical one? Not critical.
 %
 %  TODO:
+%   - Add max TE for GM/WML contrast (for WM-DIR)
+%   - Find TE range for 90% (80%?) DelS? Find the point under the threshold that has a neighbor above? Or solve?
+%   - Make the TE_opt calculation more robust for different cases?
+%   - Make TE_set more flexible. Allow unsetting it, updating for each replot. Maybe a "Freeze TE" button instead?
+%       - Best to start it @ 0 and ignore it then? But then we can't compare T=0. Set it to '--'?
+%       - Make it so a click on the text resets it? Secret mode, or in mouse-over text?
 %   - Make the T2 plot a subplot instead of a new figure!? Send this script our main figure handle then.
 %       - Specify subplot properly, like [ ax = subplot(1, 2, 1, 'Parent', fig); ]?
 %       - Must then be specific about which axes I'm drawing to in each case!? Set current etc.
 %       - But it seems that subplots are intended to be in panels in the same window? So, less attractive?
-%   - Find TE range for 90% (80%?) DelS? Find the point under the threshold that has a neighbor above? Or solve?
-%   - Make the TE_opt calculation more robust for different cases?
-%   - Add max TE for GM/WML contrast (for WM-DIR)
-%   - Report contrast between WML and both secondary tissues (WM and GM). Always relevant?
 %
 %  DONE:
 %   - Make a T2-TE figure that can be updated from the GUI panel for the current signal/plot settings
 %   - Calculate relative SNR (abs. S(TE) for WML) and CNR (abs. deltaS(TE) for WML-WM)
 %   - CNR/t (vs TR)! Could use something like seconds(duration([0,5,57])) (but would like duration as "mm:ss")?
-%       - Simply though, just use (SNR1/SNR2)/sqrt(TR1/TR2) as a measure
-%       - This is then a measure of relative signal/contrast efficiency, as in literature
+%       - Simply though, just use (SNR1/SNR2)/sqrt(TR1/TR2) as a measure of relative efficiencies, as in literature
 %   - A freeze button for RelS/C so you can do multiple comparisons to the same standard setting
 %   - Use less globals! Conflict with other script when names are the same. Structs are economic.
+%   - Report contrast between WML and both secondary tissues (WM and GM). Always relevant?
 %
 
 
 %% INIT
 debugInfo  = 1;                                     % Show extra info in the command window?
-Tis     = iT.T2tis;
+Tis     = iT.T2tis;                                 % Tissues to T2 plot: Normally WML, WM, GM
 % nTis    = size( Tis, 2 );                           % # of tissues to compare to the first one, including itself
-DUR     = 599   ; % iS2.ETD;                        % Use the sequence Echo Train Duration as plot duration? No, less.
+DUR     = 499   ; % iS2.ETD;                        % Use the sequence Echo Train Duration as plot duration? No, less.
 
 global iPr                                          % Program data struct (common global with Fig1)
 global UI2 iR2                                      % UI/tissue/times data structs (sequence struct is iS2)
@@ -74,7 +76,7 @@ end % main
 
 % -) Calculate & plot MRI S(t) over a duration, and TE giving optimal contrast
 function mainTEcalc()
-    oTs1  = Tis(1);    oTs2  = Tis(2);              % Usually WML, WM, GM?
+    oTs1  = Tis(1);    oTs2  = Tis(2);              % Usually WML, WM, GM
     if ( abs(03.5*iT.S0(oTs2)) < abs(iT.S0(oTs1)) ) % If 2nd signal (WM) is very low (nulled)...
         oTs2 = Tis(3);                              % ...use the 3rd tissue (GM) instead (TODO: Use both and compare?)
     end % if
@@ -159,13 +161,15 @@ function mainTEcalc()
     legend( LegS,                               ...
             'Location', 'South'                 );  % 'Best' may conflict with UI and TextBox
     
-    iR2.absS = abs( St(TEopt+1, oTs1) );
-    iR2.absC = abs( dif_max           );
+    iR2.absS    = abs( St(TEopt+1, oTs1) );
+    iR2.absC    = abs( dif_max           );
+    iR2.absCW   = abs( St(TEopt+1, Tis(1)) - St(TEopt+1, Tis(2)) ); % WML-WM contrast
+    iR2.absCG   = abs( St(TEopt+1, Tis(1)) - St(TEopt+1, Tis(3)) ); % WML-GM contrast
     if isempty(oldS2)   ; oldS2 = iR2.absS  ;   end % Old signal strength   for comparison; as float
     if isempty(oldC2)   ; oldC2 = iR2.absC  ;   end % Old signal difference for comparison; as float
     if isempty(oldTR)   ; oldTR = iS2.TR    ;   end % Old rep. time         for comparison; as float
-    relS  = uint16(100*(iR2.absS/oldS2));           % Rel. Signal for WML
-    relC  = uint16(100*(iR2.absC/oldC2));           % Rel. Contrast between WML and tissue
+    relS    = uint16(100*(iR2.absS/oldS2));         % Rel. Signal for WML
+    relC    = uint16(100*(iR2.absC/oldC2));         % Rel. Contrast between WML and tissue
     relS_t  = uint16(100*( (iR2.absS/oldS2)/sqrt(iS2.TR/oldTR) ));  % Rel. SNR per time (ratio of S over TR^0.5)
     relC_t  = uint16(100*( (iR2.absC/oldC2)/sqrt(iS2.TR/oldTR) ));  % Rel. CNR per time (ratio of S over TR^0.5)
     fStr = ['\\itOptimal TE:\n\\rm\\bf'         ... % Tex \bf\it\rm = bold/italic/normal; escape \ for sprintf!
@@ -186,7 +190,9 @@ function mainTEcalc()
     
     if ( TEset ~= TEopt )
         iR2.absSset = abs( St(TEset+1, oTs1) );
-        iR2.dirCset = St(TEset+1, oTs1) - St(TEset+1, oTs2);
+        iR2.dirCset = St(TEset+1, oTs1  ) - St(TEset+1, oTs2  );
+        iR2.C_WMset = St(TEset+1, Tis(1)) - St(TEset+1, Tis(2));
+        iR2.C_GMset = St(TEset+1, Tis(1)) - St(TEset+1, Tis(3));
     end % if
 
 end % mainTEcalc
@@ -339,29 +345,31 @@ end % fcn
 function printVars_callback(~,~)                    % UI that prints info to the command window
     fStr = ['\n'                                ... % TODO: Isn't fprintf obeying the field width operator for strings?!
             '*******************************\n' ...
-            '***    Optimal echo time:   ***\n' ...
+            '***    T2 plot results:     ***\n' ...
             '*******************************\n' ...
-            '*  S0_%3s         =   % 1.3f  *\n' ... % TODO: Align when positive?
-            '*  S0_%3s         =   % 1.3f  *\n' ...
-            '*  S0_%3s         =   % 1.3f  *\n' ...
-            '*  S0_%3s         =   % 1.3f  *\n' ...
+            '*  S0_%3s         =  % 1.3f   *\n' ... % TODO: Align when positive?
+            '*  S0_%3s         =  % 1.3f   *\n' ...
+            '*  S0_%3s         =  % 1.3f   *\n' ...
+            '*  S0_%3s         =  % 1.3f   *\n' ...
             '*******************************\n' ...
             '*  TE_opt         =  %+7s','  *\n' ...
-            '*  relS_WML (@TE) =   % 1.3f  *\n' ...
-            '*  relC     (@TE) =   % 1.3f  *\n' ];  % TODO: Proper right alignment of positive/negative numbers
+            '*  S_WML @TE_opt  =  % 1.3f   *\n' ...
+            '*  C_WM   --"--   =  % 1.3f   *\n' ...
+            '*  C_GM   --"--   =  % 1.3f   *\n' ];  % TODO: Proper right alignment of positive/negative numbers
     fVar = { iT.TsTag(1),iT.S0(1), iT.TsTag(2),iT.S0(2),    ...
              iT.TsTag(3),iT.S0(3), iT.TsTag(4),iT.S0(4),    ...
-             TEstr, iR2.absS, iR2.absC                      };
+             TEstr, iR2.absS, iR2.absCW, iR2.absCG          };
     fprintf( fStr, fVar{:} );
     if ( TEset ~= TEopt )
         fStr = [                                    ...
                 '*******************************\n' ...
                 '*  TE_set         =  %4.i ms  *\n' ...
-                '*  relS_WML (@TE) =   % 1.3f  *\n' ...
-                '*  relC     (@TE) =   % 1.3f  *\n' ...
+                '*  S_WML @TE_set  =  % 1.3f   *\n' ...
+                '*  C_WM   --"--   =  % 1.3f   *\n' ...
+                '*  C_GM   --"--   =  % 1.3f   *\n' ...
                 '*  relS(set/opt)  =  %4.1i %%   *\n' ...
                 '*  relC(set/opt)  =  %4.1i %%   *\n' ];
-        fVar = { uint16(TEset), iR2.absSset, iR2.dirCset,                   ...
+        fVar = { uint16(TEset), iR2.absSset, iR2.C_WMset, iR2.C_GMset,              ...
                  uint16(100*iR2.absSset/iR2.absS), uint16(100*iR2.dirCset/iR2.absC) };
         fprintf( fStr, fVar{:} );
 %                 '*******************************\n' ...

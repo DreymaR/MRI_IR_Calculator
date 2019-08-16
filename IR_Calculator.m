@@ -27,6 +27,11 @@ function IR_Calculator()
 %       - GE seemingly uses artificially high T1csf for DIR in lieu of explicit Mz_end calculations?
 % 
 %  TOFIX/WIP:
+%   - Set TR/T_Inv etc on vendor change; back to former when leaving. In/Out.
+%   - When setting TE in WM-DIR, RelC got the wrong sign on the Results printout.
+%   - Phi adds T2P time to TI?! Add Phi vendor with this.
+%   - Add relax. times based on Neema, Hanson etc reporting increased T1/T2 in NAWM/NAGM in serious MS patients!?
+%       - Check out a range of these to see the effect on parameters and signal/contrast.
 %   - For 7T w/o T2Prep, no T1-nulled solution is found below TReff ~> 12 s. But there is one!? Find it?
 %   - Correct SNR/CNR for field strength (the nominal increase is max. prop. to B0... or?)
 %   - Philips center pulses around TIs, not starting there (so their t=0 is not ours!). Correct their times accordingly.
@@ -519,9 +524,10 @@ function SetRelaxTimes( B0opt )
     iPr.B0sel = B0opt;                                  % Ensures right selection in the UI
     iPr.B0str = [   "1.5 T (Alsop)", "3.0 T (Alsop)", "1.5 T (GE)",     ... % Array of B0/sources for relax. times
                     "3.0 T (GE)", "1.5 T (MRIQue)", "3.0 T (Lalande)",  ...
-                    "1.5 T (Visser)", "7.0 T (Visser)"  ];  %   (used in the UI)
-    iPr.B0tag = char(iPr.B0str(iPr.B0sel));
-    iPr.B0tag = iPr.B0tag(1:5);                         % Char array of only the field strength, for figure titles
+                    "1.5 T (Visser)", "7.0 T (Visser)",                 ...
+                    "3.0 T (meas.)", "#.# T (Custom)"                   ];  %   (used in the UI)
+%     iPr.B0tag = char(iPr.B0str(iPr.B0sel));
+%     iPr.B0tag = iPr.B0tag(1:5);                         % Char array of only the field strength, for figure titles
     TisStr = [  " WM     ", " GM     ",   ...           % Array of tissue names
                 " CSF    ", " WML/MS ", " Fat    " ];   %   (for formatted output)
 %     T1 = split(TsStr); T1 = char(T1(:,:,3));            % Array of only the tissue type (3rd word) for legends,...
@@ -534,7 +540,7 @@ function SetRelaxTimes( B0opt )
             T2_GM  =   87.0;            % 1.5 T Wehrli, Yacoub
             T2_CSF = 2280.0;            % 1.5 T Helms
             T2_MS  =  100.0;            % 1.5 T Alsop
-            T2_Fat =   40.0;            % NB: PURE GUESSWORK! BEWARE!
+            T2_Fat =   60.0;            % NB: PURE GUESSWORK! BEWARE!
     switch B0opt                        % Set T1 (and T2 if available) times based on B0 and sources
         case 1                  % 1.5 T (Alsop); Madhuranthakam et al, Mag Res Med 2012 67(1):81-88
             iS.B0  = 1.5;
@@ -626,10 +632,43 @@ function SetRelaxTimes( B0opt )
             TisStr(3) = "(CSF)   ";     % (This value was cited from elsewhere)
             TisStr(4) = "(MS/WML)";     % (This value was cited from elsewhere)
             TisStr(5) = "(Fat)   ";     % (This value was cited from elsewhere)
+        case 9                  % 3.0 T (meas.); 2019-02-06 T1/T2 brain measurements from OUS UUS NMR3 (by WibeN)
+            iS.B0  = 3.0;
+            T1_WM  =  850.0;            % 3.0 T value measured on brain at UUS NMR3 w/ multi-IR FSE (GE: 825 ms; meas. 840-900)
+            T1_GM  = 1420.0;            % 3.0 T --"-- (GE: 1400 ms)
+            T1_CSF = 4270.0;            % 3.0 T value from GE 3dfse source code
+            if ( iS.Vnd == "GE" ) && ( iPr.Mode ~= 1 )
+                T1_CSF = 5000.0;        % GE sets a longer T1_CSF for DIR only! It probably compensates for Mz_end.
+            end % if
+            T1_MS  = 1050.0;            % 3.0 T Measured as above (Alsop: 1350 ms; measured 920 & 1050 in two lesions)
+            T1_Fat =  250.0;            % 3.0 T value from GE 3dfse source code (300 ms for InHance only?)
+            T2_WM  =   55.0;    60.0;   % 3.0 T value measured on brain at UUS NMR3 w/ multi-TE SE (GE: 60 ms; meas. 55 ms)
+            T2_GM  =   65.0;    70.0;   % 3.0 T --"-- (GE: 70 ms; meas. 58 ms but everyone has +10 from WM? But, PV from CSF?)
+            T2_MS  =  102.0;            % 3.0 T --"-- (measured in one lesion in one healthy volunteer only)
+            T2_CSF = 2400.0;            % 3.0 T value from GE 3dfse source code
+            TisStr(3) = "(CSF)   ";     % (This value was cited from elsewhere)
+            TisStr(5) = "(Fat)   ";     % (This value was cited from elsewhere)
+        case 10                 % #.# T (Custom); You can add your own times here.
+            iS.B0  = 1.5;               % For display only
+            T1_WM  =  660.0;            % 1.5 T GE starting value
+            T1_GM  = 1200.0;            % 1.5 T --"--
+            T1_CSF = 4270.0;            % 1.5 T --"--
+            if ( iS.Vnd == "GE" ) && ( iPr.Mode ~= 1 )
+                T1_CSF = 5100.0;        % GE sets a longer T1_CSF for DIR only! It probably compensates for Mz_end.
+            end % if
+            T1_MS  =  T1_GM;            % Estimate T1_WML ~ T1_GM
+            T1_Fat =  192.0;            % 1.5 T GE starting value
+            T2_WM  =   80.0;            % 1.5 T --"--
+            T2_GM  =   95.0;            % 1.5 T --"--
+            T2_CSF = 3500.0;            % 1.5 T --"--
+            T2_MS  =  100.0;            % 1.5 T Alsop
+            T2_Fat =   60.0;            % NB: PURE GUESSWORK! BEWARE!
+            TisStr(4) = "(MS/WML)";     % (This value was cited from elsewhere)
         otherwise
             error('ERROR: Undefined B0/source!');
     end % switch B0opt
     
+    iPr.B0tag = sprintf( '%1.1f T', iS.B0 );        % Char array of the field strength in T, for figure titles
     Ts.T  = [ [ T1_WM, T1_GM, T1_CSF, T1_MS, T1_Fat ];  ...
               [ T2_WM, T2_GM, T2_CSF, T2_MS, T2_Fat ] ];
     Ts.Tag  = [ TisTag; TisStr ];
@@ -1114,7 +1153,7 @@ function plotT2_callback(~,~)                       % Run T2 plot (in separate s
         'S0'    ,   iR.S0(1:4)              ,   ...
         'T2'    ,   Ts.T(2,:)               ,   ...
         'TsTag' ,   Ts.Tag(1,1:4)           ,   ...
-        'T2tis' ,   [ 4 1 2 ]               );
+        'T2tis' ,   [ 4 1 2 ]               );      % Tissues to T2 plot: WML, WM, GM
     iPr.Fig2 = IR_T2_Subplot( iT2s, iS );
     % iR.S0(1:4), Ts.T(2,:), Ts.Tag(1,1:4), [ 4 1 2 ], iS )    % S0/T2/tags for a set of tissues to plot
 end % fcn
