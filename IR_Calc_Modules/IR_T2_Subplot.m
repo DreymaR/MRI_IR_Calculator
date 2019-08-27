@@ -161,17 +161,17 @@ function mainTEcalc()
     legend( LegS,                               ...
             'Location', 'South'                 );  % 'Best' may conflict with UI and TextBox
     
-    iR2.absS    = abs( St(TEopt+1, oTs1) );
-    iR2.absC    = abs( dif_max           );
-    iR2.absCW   = abs( St(TEopt+1, Tis(1)) - St(TEopt+1, Tis(2)) ); % WML-WM contrast
-    iR2.absCG   = abs( St(TEopt+1, Tis(1)) - St(TEopt+1, Tis(3)) ); % WML-GM contrast
-    if isempty(oldS2)   ; oldS2 = iR2.absS  ;   end % Old signal strength   for comparison; as float
-    if isempty(oldC2)   ; oldC2 = iR2.absC  ;   end % Old signal difference for comparison; as float
+    iR2.magS    = abs( St(TEopt+1, oTs1) );
+    iR2.magC    = abs( dif_max           );         % TODO: How does this work? It should be negative if WML<WM
+    iR2.magCW   = magC( St(TEopt+1, Tis(1)) , St(TEopt+1, Tis(2)) );    % WML-WM contrast
+    iR2.magCG   = magC( St(TEopt+1, Tis(1)) , St(TEopt+1, Tis(3)) );    % WML-GM contrast
+    if isempty(oldS2)   ; oldS2 = iR2.magS  ;   end % Old signal strength   for comparison; as float
+    if isempty(oldC2)   ; oldC2 = iR2.magC  ;   end % Old signal difference for comparison; as float
     if isempty(oldTR)   ; oldTR = iS2.TR    ;   end % Old rep. time         for comparison; as float
-    relS    = uint16(100*(iR2.absS/oldS2));         % Rel. Signal for WML
-    relC    = uint16(100*(iR2.absC/oldC2));         % Rel. Contrast between WML and tissue
-    relS_t  = uint16(100*( (iR2.absS/oldS2)/sqrt(iS2.TR/oldTR) ));  % Rel. SNR per time (ratio of S over TR^0.5)
-    relC_t  = uint16(100*( (iR2.absC/oldC2)/sqrt(iS2.TR/oldTR) ));  % Rel. CNR per time (ratio of S over TR^0.5)
+    relS    = uint16(100*(iR2.magS/oldS2));         % Rel. Signal for WML
+    relC    = uint16(100*(iR2.magC/oldC2));         % Rel. Contrast between WML and tissue
+    relS_t  = uint16(100*( (iR2.magS/oldS2)/sqrt(iS2.TR/oldTR) ));  % Rel. SNR per time (ratio of S over TR^0.5)
+    relC_t  = uint16(100*( (iR2.magC/oldC2)/sqrt(iS2.TR/oldTR) ));  % Rel. CNR per time (ratio of S over TR^0.5)
     fStr = ['\\itOptimal TE:\n\\rm\\bf'         ... % Tex \bf\it\rm = bold/italic/normal; escape \ for sprintf!
             ' TE_{opt}    = %3s \n'             ... % %3.i ms
             ' S_{WML}    = %4.3f \n'            ... % %4.3f
@@ -180,19 +180,19 @@ function mainTEcalc()
             ' rC(L-?)  = %3.f%%\n'              ... % %4.3f
             ' rSNR/t   = %3.f%%\n'              ... % %4.3f
             ' rCNR/t   = %3.f%%'                ];  % %4.3f
-    fVar = [ TEstr, iR2.absS, iR2.absC, relS, relC, relS_t, relC_t ]; % 
+    fVar = [ TEstr, iR2.magS, iR2.magC, relS, relC, relS_t, relC_t ]; % 
     figTextBox( fStr, fVar );                       % Display an info text box on the figure
     if ( frzS2 == 0 )                               % If RelZ isn't frozen (by the UI button)
-        oldC2 = iR2.absC;
-        oldS2 = iR2.absS;
+        oldC2 = iR2.magC;
+        oldS2 = iR2.magS;
         oldTR = iS2.TR;
     end % if frzS2
     
     if ( TEset ~= TEopt )
-        iR2.absSset = abs( St(TEset+1, oTs1) );
-        iR2.dirCset = St(TEset+1, oTs1  ) - St(TEset+1, oTs2  );
-        iR2.C_WMset = St(TEset+1, Tis(1)) - St(TEset+1, Tis(2));
-        iR2.C_GMset = St(TEset+1, Tis(1)) - St(TEset+1, Tis(3));
+        iR2.magSset = abs( St(TEset+1, oTs1) );
+        iR2.dirCset = magC( St(TEset+1, oTs1  ) , St(TEset+1, oTs2  ) );
+        iR2.C_WMset = magC( St(TEset+1, Tis(1)) , St(TEset+1, Tis(2)) );    % WML-WM contrast
+        iR2.C_GMset = magC( St(TEset+1, Tis(1)) , St(TEset+1, Tis(3)) );    % WML-GM contrast
     end % if
 
 end % mainTEcalc
@@ -227,6 +227,10 @@ function TEm = FindOptTE( S0_1, S0_2, T2_1, T2_2 )  % Find TE to give max contra
     % TODO: How to use vpasolve to find the max?
     TEm = vpasolve( ( CalcSt(S0_1,T2_1) ...         % Solve |S1(t) - S2(t)| == max for t = TE_opt
                     - CalcSt(S0_2,T2_2) ), t);      % Return TE_opt
+end % fcn
+
+function mC = magC( SL, SB )                        % Calculate contrast between "lesion" and "background" magnitude S
+    mC = abs( SL ) - abs( SB );                     % Use the difference between abs. signals as each voxel is mag.
 end % fcn
 
 %% PLOT
@@ -358,7 +362,7 @@ function printVars_callback(~,~)                    % UI that prints info to the
             '*  C_GM   --"--   =  % 1.3f   *\n' ];  % TODO: Proper right alignment of positive/negative numbers
     fVar = { iT.TsTag(1),iT.S0(1), iT.TsTag(2),iT.S0(2),    ...
              iT.TsTag(3),iT.S0(3), iT.TsTag(4),iT.S0(4),    ...
-             TEstr, iR2.absS, iR2.absCW, iR2.absCG          };
+             TEstr, iR2.magS, iR2.magCW, iR2.magCG          };
     fprintf( fStr, fVar{:} );
     if ( TEset ~= TEopt )
         fStr = [                                    ...
@@ -369,8 +373,8 @@ function printVars_callback(~,~)                    % UI that prints info to the
                 '*  C_GM   --"--   =  % 1.3f   *\n' ...
                 '*  relS(set/opt)  =  %4.1i %%   *\n' ...
                 '*  relC(set/opt)  =  %4.1i %%   *\n' ];
-        fVar = { uint16(TEset), iR2.absSset, iR2.C_WMset, iR2.C_GMset,              ...
-                 uint16(100*iR2.absSset/iR2.absS), uint16(100*iR2.dirCset/iR2.absC) };
+        fVar = { uint16(TEset), iR2.magSset, iR2.C_WMset, iR2.C_GMset,              ...
+                 uint16(100*iR2.magSset/iR2.magS), uint16(100*iR2.dirCset/iR2.magC) };
         fprintf( fStr, fVar{:} );
 %                 '*******************************\n' ...
 %                 '***     Manual echo time:   ***\n' ...
