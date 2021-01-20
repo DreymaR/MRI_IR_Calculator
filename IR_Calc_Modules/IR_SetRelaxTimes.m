@@ -5,6 +5,8 @@ function T1_CSF = IR_SetRelaxTimes( B0opt )         % Set relax. times based on 
 %   - You may edit the Custom set of times at your leisure. Reselect the "T1s" option after saving this file.
 %
 %  NOTE:
+%   - Relaxation times vary widely in literature. We have used values from GE's scanner implementation, and other sources.
+%       - Lalande et al, MRI 2016: https://www.sciencedirect.com/science/article/pii/S0730725X16301266
 %   - 
 %
 %  TODO:
@@ -24,7 +26,7 @@ global iPr iS Ts    % iUI iT iR                         % Program/system/tissue 
     iPr.B0str = [   "1.5 T (Alsop)", "3.0 T (Alsop)", "1.5 T (GE)",     ... % Array of B0/sources for relax. times
                     "3.0 T (GE)", "1.5 T (MRIQue)", "3.0 T (Lalande)",  ...
                     "1.5 T (Visser)", "7.0 T (Visser)",                 ...
-                    "3.0 T (meas.)", "#.# T (Custom)"                   ];  %   (used in the UI)
+                    "3.0 T (meas.)", "1.5 T (Custom)", "3.0 T (Custom)" ];  %   (used in the UI)
 %     iPr.B0tag = char(iPr.B0str(iPr.B0sel));
 %     iPr.B0tag = iPr.B0tag(1:5);                         % Char array of only the field strength, for figure titles
     TisStr = [  " WM     ", " GM     ",   ...           % Array of tissue names
@@ -34,7 +36,7 @@ global iPr iS Ts    % iUI iT iR                         % Program/system/tissue 
     TisTag = [  "WM ",  "GM ",                      ... % Explicit declaration for sanity
                 "CSF",  "WML",  "Fat"               ];
     
-    %   case 6          % 1.5 T (Visser); Visser 2010 MagResMed - used here as fallback T2 values (1.5 & 3.0 T)
+            % 1.5 T (Visser); Visser 2010 MagResMed - used here as fallback T2 values (1.5 & 3.0 T)
             T2_WM  =   74.0;            % 1.5 T Wehrli, Yacoub
             T2_GM  =   87.0;            % 1.5 T Wehrli, Yacoub
             T2_CSF = 2280.0;            % 1.5 T Helms
@@ -147,22 +149,35 @@ global iPr iS Ts    % iUI iT iR                         % Program/system/tissue 
             T2_CSF = 2400.0;            % 3.0 T value from GE 3dfse source code
             TisStr(3) = "(CSF)   ";     % (This value was cited from elsewhere)
             TisStr(5) = "(Fat)   ";     % (This value was cited from elsewhere)
-        case 10                 % #.# T (Custom); You can add your own times here.
+        case 10                 % 1.5 T (Custom): You can add your own times here.
             iS.B0  =    1.5;            % For display only
-            T1_WM  =  660.0;            % 1.5 T GE starting value = 660 ms
-            T1_GM  = 1200.0;            % 1.5 T --"-- = 1200 ms
-            T1_CSF = 4308.0;            % 1.5 T --"-- = 4270 ms; Siemens seem to use around 4308 ms?
+            T1_WM  =  660.0;            % 1.5 T GE source value = 660 ms
+            T1_GM  = 1200.0;            % 1.5 T --"--           = 1200 ms
+            T1_CSF = 4308.0;            % 1.5 T --"--           = 4270 ms; Siemens seem to use around 4308 ms?
             T1_MS  = 1150.0;            % Estimate T1_WML ~ T1_GM?
-            T1_Fat =  192.0;            % 1.5 T GE starting value = 192 ms
+            T1_Fat =  192.0;            % 1.5 T GE source value = 192 ms
             
-            T2_WM  =   80.0;            % 1.5 T --"-- =   80 ms
-            T2_GM  =   95.0;            % 1.5 T --"-- =   95 ms
-            T2_CSF = 3500.0;            % 1.5 T --"-- = 3500 ms
-            T2_MS  =  100.0;            % 1.5 T Alsop =   60 ms
+            T2_WM  =   80.0;            % 1.5 T --"--           =   80 ms
+            T2_GM  =   95.0;            % 1.5 T --"--           =   95 ms
+            T2_CSF = 3500.0;            % 1.5 T --"--           = 3500 ms
+            T2_MS  =  100.0;            % 1.5 T Alsop           =   60 ms (meas. 100 ms @3T)
+            T2_Fat =   60.0;            % NB: PURE GUESSWORK! BEWARE!
+        case 11                 % 3.0 T (Custom): You can add your own times here.
+            iS.B0  =    3.0;
+            T1_WM  =  842.0;            % 3.0 T GE source value =  825 ms
+            T1_GM  = 1480.0;            % 3.0 T --"--           = 1400 ms
+            T1_CSF = 5000.0;            % 3.0 T --"--           = 4270 ms (5000 for DIR?!)
+            T1_MS  = 1587.0;            % 3.0 T Alsop           = 1350 ms
+            T1_Fat =  250.0;            % 3.0 T GE source value =  250 ms
+            
+            T2_WM  =   60.0;            % 3.0 T --"--           =   60 ms
+            T2_GM  =   70.0;            % 3.0 T --"--           =   70 ms
+            T2_CSF = 2400.0;            % 3.0 T --"--           = 2400 ms
+            T2_MS  =  100.0;            % 1.5 T Alsop           =   60 ms (meas. 100 ms @3T)
             T2_Fat =   60.0;            % NB: PURE GUESSWORK! BEWARE!
 %             TisStr(4) = "(MS/WML)";     % (This value was cited from elsewhere)
 %             if ( iS.Vnd == "GE" ) && ( iPr.Mode ~= 1 )
-%                 T1_CSF = 5100.0;        % GE sets a longer T1_CSF for DIR only! It probably compensates for Mz_end.
+%                 T1_CSF = 5000.0;        % GE sets a longer T1_CSF for DIR only! It probably compensates for Mz_end.
 %             end % if
         otherwise
             error('ERROR: Undefined B0/source!');

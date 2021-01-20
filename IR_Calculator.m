@@ -29,7 +29,6 @@ function IR_Calculator()
 %  TOFIX/WIP:
 %   - Set TR/T_Inv etc on vendor change; back to former when leaving. In/Out.
 %   - When setting TE in WM-DIR, RelC got the wrong sign on the Results printout.
-%   - Phi adds T2P time to TI?! Add Phi vendor with this.
 %   - Add relax. times based on Neema, Hanson etc reporting increased T1/T2 in NAWM/NAGM in serious MS patients!?
 %       - Check out a range of these to see the effect on parameters and signal/contrast.
 %   - For 7T w/o T2Prep, no T1-nulled solution is found below TReff ~> 12 s. But there is one!? Find it?
@@ -60,6 +59,7 @@ function IR_Calculator()
 % 
 %  DONE:
 %   - Vendor setting, so sequence details and time calculations can be adjusted accordingly.
+%       - Phi and Sie add T2P time to TI. GE doesn't.
 %   - Pulse durations. HypSec inv. pulses are typically ~15 ms, which is significant (GE uses pw_rf0 = 16ms)
 %       - No T1 during pulses?! So subtract pulse dur. from TReff
 %       - Simulate the first pulse as starting at time = 0 (unlike Phi; correct for that in their times)
@@ -145,7 +145,7 @@ iS.IEf  =  100      ; % %                           % Inversion efficiency in pe
 iS.IPD  =   16.0    ; % ms                          % Inversion pulse duration (GE/Phi used 16/17 ms HypSec in tests)
 iS.T2pOn = true     ;                               % WIP: Turn this off when T1n is set manually (as T2 is then unknown)?
 iS.T2p  =    0.0    ; % ms                          % T2 preparation time
-iS.TOb  =   25.0    ; % ms  % WIP: Relate to iS.IPD % TI1 outboard (Siemens: Add at least 23 ms; +10? ms for T2p?)
+iS.TOb  =   25.0    ; % ms  % WIP: Relate to iS.IPD % TI1 outboard (Siemens: Add around 23 ms; +10? ms for T2p?)
 iS.FAx  =   90      ; % °                           % (MEX = cos(FAx*pi/180) is MagZ after excitation with angle FAx)
 iS.ESP  = 3.65; iS.IET = 0.50; % iS.ETL = 122;      % Echo Spacing, Echo Train Length and Inv.Eff. for TSE readout
                                                     % WIP: Just assuming incomplete inversion doesn't lead to anything!
@@ -400,7 +400,7 @@ function FltOrSym = FoS( InNr )                     % Cast as double for, e.g., 
 end % fcn
 
 function SieTI = SieT( TI )                         % Add outboard time estimated for the Siemens sequence
-    SieTI = TI + iS.TOb;
+    SieTI = TI + iS.TOb;                            % TODO: Rework this for Sie+Phi? Can use iS.TOb for Sie but not Phi?
     if ( iS.T2pOn ) && ( iS.T2p > 0 )               % Add a little extra outboard (10 ms?) for T2 prep?
         SieTI = SieTI + iS.T2p;                     % Was + 10 for T2prep, but that's iffy...
     end % if
@@ -982,18 +982,19 @@ end % fcn
 
 function vendor_callback(~,~)                       % Switch between vendor implementations
     switch iS.Vnd
-        case ""                                     % ->
-            iS.Vnd = "GE";
+        case ""
+            iS.Vnd = "GE";                          % -> GE
             iS.T2pOld = iS.T2p;                     % Store the current T2 prep time
             iS.T2p = 200.0;                         % GE uses this value consistently
-        case "GE"                                   % ->
-            iS.Vnd = "Siemens";
+        case "GE"
+            iS.Vnd = "Siemens";                     % -> Sie
             iS.T2p = 170.0;                         % Sie uses this value consistently
-%         case "GE"                                   % ->
-%             iS.Vnd = "Philips";                     % NOTE: No special corrections exist for Philips at this point
-%             iS.T2p = 125.0;                         % Phi uses this value as default
-        case "Siemens"                              % <<-
-            iS.Vnd = "";
+%             if FLAIR, use T2P, if DIR turn it off by def.?
+        case "Siemens"
+            iS.Vnd = "Philips";                     % -> Phi
+            iS.T2p = 125.0;                         % Phi uses this value as default
+        case "Philips"
+            iS.Vnd = "";                            % <<-
             iS.T2p = iS.T2pOld;                     % Retrieve the previous T2 prep time
     end % switch                                    % Note that the figure title shows the active vendor
     SetRelaxTimes( iPr.B0sel )                      % Vendor implementation and mode may affect relaxation time settings
