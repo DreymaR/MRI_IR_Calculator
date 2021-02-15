@@ -10,6 +10,8 @@ function IR_Calculator()
 %   - TI times are defined vendor-style here! That is, TI1 is the full time and TI2 only the time to readout.
 %       - So TI1 = time_TI1, and TI2 = time_TI1 - time_TI2. This makes the signal formulae simpler.
 %   - Pulse durations are calculated into Ti times, but not T2prep except when reporting Siemens times. Vendor specific.
+%   - Typical readout for our GE CUBE-FLAIR is ETL 161, ES 5.29 ms. 
+%       - We've used 160*5.29 ms = 845 ms as our standard T_Ro.
 %   - Relaxation times vary widely in literature. We have used values from GE's scanner implementation, and other sources.
 %       - Lalande et al, MRI 2016: https://www.sciencedirect.com/science/article/pii/S0730725X16301266
 %   - There's a good explanation of simple inversion mathematics at http://xrayphysics.com/contrast.html
@@ -37,6 +39,7 @@ function IR_Calculator()
 %   - SetRelaxTimes(), SetMode() and setT1n() are an interdependent mess! Merge at least the latter two?!?
 % 
 %  TODO:
+%   - Instead of the set of globals, have one 'ic' global and then ic.UI_###, ic.Pr_### etc.
 %   - Move all setup fcns to a separate file (so one fcn calls the others in that file?)?
 %   - Same with UI creation? Look to GUIDE for guidance?! The UI control values should all be in an accessible struct.
 %   - A tool to calculate optimal TR w/ respect to CNR/t given the settings?
@@ -58,6 +61,7 @@ function IR_Calculator()
 %       - We'll need a more thorough Bloch simulation to account for all the spin components.
 % 
 %  DONE:
+%   - Refresh T1/T2 shortcut (press 'r') for when custom values were added in IR_SetRelaxTimes().
 %   - Vendor setting, so sequence details and time calculations can be adjusted accordingly.
 %       - Phi and Sie add T2P time to TI. GE doesn't.
 %   - Pulse durations. HypSec inv. pulses are typically ~15 ms, which is significant (GE uses pw_rf0 = 16ms)
@@ -140,7 +144,7 @@ if isempty( ircInit )
 
 iS.Vnd  = ""        ;                               % Vendor name (for sequence adjustments)
 iS.TR   = 6000.0    ; % ms                          % Repetition time, as float
-iS.ETD  =  800.0    ; % ms                          % Readout time T_Ro = ETL * ESP (GE: Check CVs after Download)
+iS.ETD  =  850.0    ; % ms                          % Readout time T_Ro = ETL * ESP (GE: Check CVs after Download)
 iS.IEf  =  100      ; % %                           % Inversion efficiency in percent (are GE's SECH pulses ~98%?)
 iS.IPD  =   16.0    ; % ms                          % Inversion pulse duration (GE/Phi used 16/17 ms HypSec in tests)
 iS.T2pOn = true     ;                               % WIP: Turn this off when T1n is set manually (as T2 is then unknown)?
@@ -156,7 +160,7 @@ iS.Rew  =    0.0    ; %                             % TODO: Rewinder after reado
 iUI.Show    = true  ;                               % Show the UI control panel
 iPr.Mode    =    1  ;                               % Start in mode 1, then keep the run mode over reruns
 iPr.TsSel   =    3  ;                               % Start with a value (CSF), then keep the selection over reruns
-iPr.B0sel   =    4  ;                               % Start with GE 3T setup, w/ relaxation times from literature/source
+iPr.B0sel   =    2  ;                               % Start with GE 3T setup, w/ relaxation times from literature/source
 SetRelaxTimes( iPr.B0sel )                          % Need to initialize relaxation times before mode.
 SetMode( iPr.Mode )                                 % Initialize mode settings
 end % if ircInit
@@ -584,7 +588,7 @@ function IR_CreateUI()                                 % Display a button to sho
     uicontrol( 'Style', 'pushbutton',           ... % For all modes:
         'String', 'Panel',                      ...
         'FontWeight', 'bold',                   ...
-        'ToolTipString', '[p] Show/hide UI',    ...
+        'ToolTipString', '[h] Show/hide UI',    ...
         'Units', 'normalized',                  ...
         'Position', [ uiX uiY-4*eS eW eH ],     ...
         'Callback', @masterUI_callback          );  % UI to show/hide the UI control panel
@@ -695,7 +699,7 @@ function createUIPanel()
             'Position', [ mX2 eY+0 eW2 24 ],        ...
             'Style',            'pushbutton',       ...
             'String',           'Results',          ...
-            'ToolTipString',    '[r] Print results',...
+            'ToolTipString',    '[p] Print results',...
             'Callback', @printVars_callback         );  % UI to print results to the command window
 
         case 2
@@ -1023,7 +1027,7 @@ function tr_set_callback(src,~)                     % UI to set TR
     main();
 end % fcn
 
-function debug_callback(src,~)                     % UI to step TR (DEBUG)
+function debug_callback(~,~)                     % UI to step TR (DEBUG)
     iS.TR = iS.TR + 1000;
     main();
 end % fcn
@@ -1150,9 +1154,17 @@ function printInfo_callback(~,~)                    % UI callback that prints se
     fprintf( fStr, iPr.B0str(iPr.B0sel), T1info{:}, T2info{:}, T1pars{:} );
 end % fcn
 
+function refresh_callback(~,~)                      % Refresh T1/T2 values
+    fprintf( "<> IR-Calc T1/T2 refresh\n" );
+    SetRelaxTimes( iPr.B0sel )
+    main();
+end % fcn
+
 function keyPress_callback(~,evt)
     switch evt.Key
-        case 'p'                                    % Show/hide UI panel
+        case 'r'                                    % Refresh T1/T2 values
+            refresh_callback([],[])
+        case 'h'                                    % Show/hide UI panel
             masterUI_callback([],[])                % Calling with dummy values
         case 's'                                    % Plot T2 decay
             plotT2_callback([],[])
@@ -1160,7 +1172,7 @@ function keyPress_callback(~,evt)
             vendor_callback([],[])
         case 'd'                                    % Step TR (DEBUG)
             debug_callback([],[])
-        case 't'                                    % Switch mode
+        case 't'                                    % TrueT2-DIR shortcut
             switch iPr.Mode
                 case 1
                     cMode_callback([],[],[ 2 1 0 ])
@@ -1174,9 +1186,9 @@ function keyPress_callback(~,evt)
             end % switch Mode
         case 'f'                                    % Print info
             printInfo_callback([],[])
-        case 'r'                                    % Print results
+        case 'p'                                    % Print results
             printVars_callback([],[])
-        case 'w'                                    % Switch mode
+        case 'w'                                    % Switch IR mode
             if ismember( iPr.Mode, [ 1 2 ] )
                 cMode_callback([],[],[ 2 1 0 ])
             end % if
