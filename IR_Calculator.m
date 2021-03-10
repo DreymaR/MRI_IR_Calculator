@@ -11,7 +11,7 @@ function IR_Calculator()
 %       - So TI1 = time_TI1, and TI2 = time_TI1 - time_TI2. This makes the signal formulae simpler.
 %   - Pulse durations are calculated into Ti times, but not T2prep except when reporting Siemens times. Vendor specific.
 %   - Typical readout for our GE CUBE-FLAIR is ETL 161, ES 5.29 ms. 
-%       - We've used 160*5.29 ms = 845 ms as our standard T_Ro.
+%       - We've used 160*5.29 = 845 ? 850 ms as our standard T_Ro.
 %   - Relaxation times vary widely in literature. We have used values from GE's scanner implementation, and other sources.
 %       - Lalande et al, MRI 2016: https://www.sciencedirect.com/science/article/pii/S0730725X16301266
 %   - There's a good explanation of simple inversion mathematics at http://xrayphysics.com/contrast.html
@@ -39,6 +39,7 @@ function IR_Calculator()
 %   - SetRelaxTimes(), SetMode() and setT1n() are an interdependent mess! Merge at least the latter two?!?
 % 
 %  TODO:
+%   - OliG, 2021-03-09: Can we simulate a range of B1 inhomogeneity? Affects inversion eff., or adiabatic enough? Readout!
 %   - Instead of the set of globals, have one 'ic' global and then ic.UI_###, ic.Pr_### etc.
 %   - Move all setup fcns to a separate file (so one fcn calls the others in that file?)?
 %   - Same with UI creation? Look to GUIDE for guidance?! The UI control values should all be in an accessible struct.
@@ -648,10 +649,10 @@ function IR_CreateUI()                                 % Display a button to sho
     iUI.Stp = uicontrol( 'Style', 'pushbutton', ... % ui Stp
         'String'    , 'Step TR'             ,   ...
         'FontWeight', 'bold'                ,   ...
-        'ToolTipString', '[d] [DEBUG]'      ,   ...
+        'ToolTipString', '[c/d] TR ±1 s'    ,   ...
         'Units'     , 'normalized'          ,   ...
         'Position'  , [ uiX uiY-7*eS eW eH ],   ...
-        'Callback'  , @debug_callback           );  % UI to debug by increasing TR in steps
+        'Callback'  , {@steptr_callback,1000}   );  % UI to debug by increasing TR in steps
 
     createUIPanel();
     switch iUI.Show
@@ -723,7 +724,7 @@ function createUIPanel()
             'Style', 'text',                        ...
             'BackgroundColor', boxClr,              ...
             'HorizontalAlignment', 'Left',          ...
-            'ToolTipString', '[q] Repetition time', ...
+            'ToolTipString', '[u] Repetition time', ...
             'String', 'TR:                          ms');
         iUI.TRS = uicontrol( 'Parent', iUIBox,      ...
             'Position', [ mX+40 eY+0 50 20 ],       ...
@@ -1027,8 +1028,8 @@ function tr_set_callback(src,~)                     % UI to set TR
     main();
 end % fcn
 
-function debug_callback(~,~)                     % UI to step TR (DEBUG)
-    iS.TR = iS.TR + 1000;
+function steptr_callback(~,~,inc)                   % UI to step TR (DEBUG)
+    iS.TR = iS.TR + inc;
     main();
 end % fcn
 
@@ -1171,7 +1172,9 @@ function keyPress_callback(~,evt)
         case 'v'                                    % Switch vendor implementation
             vendor_callback([],[])
         case 'd'                                    % Step TR (DEBUG)
-            debug_callback([],[])
+            steptr_callback([],[], 1000)
+        case 'c'                                    % Step TR (DEBUG)
+            steptr_callback([],[],-1000)
         case 't'                                    % TrueT2-DIR shortcut
             switch iPr.Mode
                 case 1
@@ -1196,11 +1199,11 @@ function keyPress_callback(~,evt)
             if isfield( iPr, 'Fig2' )               % ishandle( iPr.Fig2 )
                 figure( iPr.Fig2    );
             end % if
-        case 'q'                                    % Focus on TR setting uicontrol
+        case 'u'                                    % Focus on TR setting uicontrol
             uicontrol( iUI.TRS );
         case '2'                                    % Toggle T2prep on/off
             t2p_toggle_callback;
-%         case 'c'                                    % Change focus to this figure (WIP)
+%         case 'x'                                    % Change focus to this figure (WIP)
 %             figure( iPr.Fig1 );
     end % switch
 end % fcn

@@ -112,7 +112,7 @@ global IE                                             % Globals that didn't thri
         'LineWidth', 1.5                        )
     
     xlabel( 't (ms)'      , 'FontSize', 12 )
-    ylabel( 'Rel. Z magn.', 'FontSize', 12 )
+    ylabel( 'Rel. Z-accessible magnetization', 'FontSize', 12 )
     xlm = [  0  DUR ]; xlim(xlm);
     ylm = [ -1   1  ]; ylim(ylm);
 %     set( gca, 'XTick', [] );                        % Remove x axis ticks

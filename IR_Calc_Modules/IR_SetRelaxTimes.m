@@ -79,20 +79,20 @@ global iPr iS Ts    % iUI iT iR                         % Program/system/tissue 
             T1_WM  =  660.0;            % 1.5 T GE source value = 660 ms
             T1_GM  = 1200.0;            % 1.5 T --"--           = 1200 ms
             T1_CSF = 4308.0;            % 1.5 T --"--           = 4270 ms; Siemens seem to use around 4308 ms?
-            T1_MS  = 1150.0;            % Estimate T1_WML ~ T1_GM?
+            T1_MS  = 1200.0;            % Estimate T1_WML ~ T1_GM?
             T1_Fat =  192.0;            % 1.5 T GE source value = 192 ms
             
             T2_WM  =   80.0;            % 1.5 T --"--           =   80 ms
             T2_GM  =   95.0;            % 1.5 T --"--           =   95 ms
             T2_CSF = 3500.0;            % 1.5 T --"--           = 3500 ms
             T2_MS  =  100.0;            % 1.5 T Alsop           =   60 ms (meas. 100 ms @3T)
-            T2_Fat =   60.0;            % NB: PURE GUESSWORK! BEWARE!
+            T2_Fat =   60.0;            % ???
         case  4                 % 3.0 T (Custom): You can add your own times here.
             iS.B0  =    3.0;
             T1_WM  =  850.0;            % 3.0 T GE source value =  825 ms
             T1_GM  = 1400.0;            % 3.0 T --"--           = 1400 ms
             T1_CSF = 5000.0;            % 3.0 T --"--           = 4270 ms (5000 for DIR?!)
-            T1_MS  = 1200.0;            % 3.0 T Alsop           = 1350 ms
+            T1_MS  = 1400.0;            % 3.0 T Alsop           = 1350 ms
             T1_Fat =  250.0;            % 3.0 T GE source value =  250 ms
             
             T2_WM  =   60.0;            % 3.0 T --"--           =   60 ms
