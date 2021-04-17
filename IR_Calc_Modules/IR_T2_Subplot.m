@@ -1,5 +1,5 @@
 function Fig2 = IR_T2_Subplot( iT, iS2 )    % S0/T2/tags for tissues to plot; find TEopt for two ( S0set, T2set, TsTag, TEset )
-%% (D)IR MRI TE calculation
+%% (D)IR MRI TE calculation and T2 decay plot for IR_Calc
 %   - This function is called from the IR_TI_Calculator
 %   - Plot the T2 decay at readout, to determine the optimal TE.
 %
@@ -35,9 +35,9 @@ Tis     = iT.T2tis;                                 % Tissues to T2 plot: Normal
 % nTis    = size( Tis, 2 );                           % # of tissues to compare to the first one, including itself
 DUR     = 499   ; % iS2.ETD;                        % Use the sequence Echo Train Duration as plot duration? No, less.
 
-global iPr                                          % Program data struct (common global with Fig1)
+global iC  iPr                                      % IR-Calc Program data struct (common global with Fig1)
 global UI2 iR2                                      % UI/tissue/times data structs (sequence struct is iS2)
-global ircIni2 UI2Bx UI2on frzS2                    % Non-struct globals
+global iC_Ini2 UI2Bx UI2on frzS2                    % Non-struct globals
 global oldS2 oldC2 oldTR  TEopt TEset TEmin TEstr oTs1 oTs2     % Result globals (TODO: Put some in structs)
 
 fSz = 10.80; % sSz(4)/100.00;                       % Scaling factor for figures, ?1.0% of screen size
@@ -58,13 +58,13 @@ Fig2 = iPr.Fig2;                                    % Return the handle to this 
 
 t = sym('t');                                       % Set the symbolic explicitly as it's used in nested functions
 
-if isempty( ircIni2 )
-    ircIni2  = true ;                               % The program has been initialized
+if isempty( iC_Ini2 )
+    iC_Ini2  = true ;                               % The program has been initialized
     UI2on   = true  ;                               % Show the UI control panel
     frzS2   = 0     ;                               % Don't freeze the RelSNR at first
     TEmin   = 14    ; % ms                          % Minimum allowed TE
     TEset   = -1.0  ;                               % The manually set TE (will be set to TEopt)
-end % if ircIni2
+end % if iC_Ini2
 
 %% MAIN
 main();

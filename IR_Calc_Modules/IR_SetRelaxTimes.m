@@ -1,5 +1,5 @@
 function T1_CSF = IR_SetRelaxTimes( B0opt )         % Set relax. times based on the selected "B0" option, return T1_CSF
-%% (D)IR MRI T1/T2 settings
+%% (D)IR MRI T1/T2 settings for IR_Calc
 %   - This function is called from the IR_TI_Calculator
 %   - Set T1/T2 relaxation times for relevant tissues (WM/GM/CSF, MS/WML and Fat).
 %   - You may edit the Custom set of times at your leisure. Reselect the "T1s" option after saving this file.
@@ -20,7 +20,7 @@ function T1_CSF = IR_SetRelaxTimes( B0opt )         % Set relax. times based on 
 %% INIT
 % debugInfo  = 1;                                     % Show extra info in the command window?
 
-global iPr iS Ts    % iUI iT iR                         % Program/system/tissue % UI/times/results data structs
+global iC  iPr iS Ts    % iUI iT iR                     % IR-Calc Program/system/tissue % UI/times/results data structs
 
     iPr.B0sel = B0opt;                                  % Ensures right selection in the UI
     iPr.B0str = [                                   ... % Array of B0/sources for relax. times

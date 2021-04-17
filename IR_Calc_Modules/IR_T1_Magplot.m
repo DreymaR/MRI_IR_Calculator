@@ -1,5 +1,5 @@
 function IR_T1_Magplot( TIabs )
-%% (D)IR MRI Z magnetization plot
+%% (D)IR MRI Z magnetization plot for IR_Calc
 %   - This function is called from the IR_TI_Calculator
 %   - Plot the longitudinal magnetization Mz of several tissue T1s under multiple inversion time points.
 %   - (NB: Absolute TI times are used here, not relative to readout!)
@@ -16,8 +16,7 @@ function IR_T1_Magplot( TIabs )
 
 %% INIT
 % debugInfo  = 1;                                     % Show extra info in the command window?
-global iS Ts iR                                       % Globally used data structs
-global IE                                             % Globals that didn't thrive in structs or need short names
+global iC  iS Ts iR                                   % IR-Calc Globally used data structs
 
 %% MAIN
     NIT = length(TIabs)-2;                          % # of inversion time points, without readout time and duration
@@ -45,7 +44,7 @@ global IE                                             % Globals that didn't thri
     
     % WIP: Starting Z magnetization calculation.
 %     Mz0 = ones(1,length(T1Plt));                    % Test/debug: Start with relaxed signal (TR >> T1)
-%     Mz0 = -IE*Mz0;                                  % --"--: Start with inversion
+%     Mz0 = -iS.IE*Mz0;                               % --"--: Start with inversion
 %     Mz0 = 0*Mz0;                                    % --"--: Start with saturation
 %     Mz0 = -CalcS0( [ iS.TRef, 0 ], [ T1Plt ] )      % --"--: CalcS0 uses TI differences.
 %     Mz0 = CalcMagZ( [ 0 ], iS.TRef, T1Plt )         % --"--: [1 - exp(-iS.TRef./T1Plt)]
@@ -73,11 +72,11 @@ global IE                                             % Globals that didn't thri
                 MzAtIP = Mz1;
             end % if tpt                                % (Used a new if here because that seems more robust)
             if ( tpt >= IPBeg ) && ( tpt < IPEnd )
-                rPt = ( tpt*2 - (IPBeg+IPEnd) )/( IPEnd-IPBeg );   % Scan the "relative pulse time" [-1,1]
+                rPt = ( tpt*2 - (IPBeg+IPEnd) )/( IPEnd-IPBeg );    % Scan the "relative pulse time" [-1,1]
                 rMz = -atan( 6.0*rPt )/atan( 6.0 );     % A generic scaled sigmoid. WIP: Not sure if it's right for Mz!
-                Mz(:,j) = MzAtIP.*(rMz*(1+IE)/2 + (1-IE)/2);  % Account for Inv.Eff.
+                Mz(:,j) = MzAtIP.*(rMz*(1+iS.IE)/2 + (1-iS.IE)/2);  % Account for Inv.Eff.
             elseif ( tpt == IPEnd ) % || ( tpt == IPEnd2 )
-                Mz(:,j) = -IE*MzAtIP;                   % Invert Mz, accounting for Inv.Eff. (not trusting the sigmoid)
+                Mz(:,j) = -iS.IE*MzAtIP;                % Invert Mz, accounting for Inv.Eff. (not trusting the sigmoid)
             elseif ( tpt == TRo(1) )                    % Readout time
                 iR.MzTI = Mz1;                          % MagZ at readout
                 iR.S0   = sin(iS.FAx*pi/180)*Mz1;       % Signal strength at readout
