@@ -54,7 +54,7 @@ function IR_Calculator()
 %   - THS: T2 effect during adiabatic inversion!
 %       - Compensate by adding a little T2prep during inv.? E.g., half the pulse duration? But that's just guesstimate.
 %       - If we had [Mz,Mt] sim. and the adiabatic trajectory, we could get this more accurately.
-%   - Calculate times/settings for all three major vendors, switchable with iS.Vnd
+%   - Calculate times/settings for all three major vendors, switchable with iC.S.Vnd
 %   - Fix the T1null curves for T2prep. The TI values are right but the red/blue curves don't follow.
 %   - Rewrite with handles structure ( use guihandles(), guidata() etc ) like GUIDE; check GUIDE first.
 %   - Use less globals! Maybe also a struct/cell array for a set of properties/settings? Doesn't work for some vars?
@@ -102,114 +102,113 @@ function IR_Calculator()
 
 
 %% INIT
-% global debug; if isempty(debug); debug = 0; end % if
+% global debug; if isempty(debug); debug = 1; end % if
 % if( debug ~= 0 )
-%     clear all
-%     saveImg = true                                  ;   % Save figure as image in Figures dir? (Can use the menu instead)
+%     clear all                                     ;   % saveImg = true to save figure as image in Figures dir? Can use the fig. menu instead.
 % end % if
 debugInfo  = 1                                      ;   % Show extra info for debugging in the command window?
 
-global iC iPr iUI iS Ts iT iR                           % IR-Calc Program/UI/system/tissue/times/results data structs
-global ircInit iUIBox                                   % Globals that didn't thrive in structs
+global iC                                               % IR-Calc S_ystem, P_rogram, M_atter(Tissue), T_imes, R_esults data structs
+global iC_Ini1 F1_Pan UI1                               % Globals that didn't thrive in structs; UI for Fig 1   % TODO: Move UI1 to Magplot.m?
 
 [pathstr,~,~]=fileparts(mfilename('fullpath'))      ;   % [pathstring,name,extension]
 addpath(genpath(pathstr))                           ;   % Add all subfolders to search path
 rmpath(genpath([pathstr filesep '.git']))           ;   % Remove unnecessary search path
 clear pathstr
 
-% sSz = get(0,'ScreenSize')                           ;   % Get the screen size (actually, in R2015b+ pixels are 1/96")
+% sSz = get(0,'ScreenSize')                         ;   % Get the screen size (actually, in R2015b+ pixels are 1/96")
 fSz = 10.80; % sSz(4)/100.00;                           % Scaling factor for figures, ?1.0% of screen size
 % set(0,'defaultfigureposition',[3*fsz 1*fsz 4*fsz 3*fsz])	  % Default fig. position & size
-wh = [ 1 1 1 ]; iPr.FigClr = 0.92*wh; iPr.Gray = 0.50*wh;	% Colors of fig. background and grayed-out UI elements
-% fig1 = get(groot, 'CurrentFigure')                  ;   % Get handle of the current fig. ('gcf' creates one)
+wh = [ 1 1 1 ]; iC.P.FigClr = 0.92*wh; iC.P.Gray = 0.50*wh;	% Colors of fig. background and grayed-out UI elements
+% fig1 = get(groot, 'CurrentFigure')                ;   % Get handle of the current fig. ('gcf' creates one)
 figName = 'MR-IR inversion time calculator'     ;
-iPr.Fig1 = findobj( 'Type'  , 'Figure'          ,   ... % Find this script's figure (possibly among others)
+iC.P.Fig1 = findobj( 'Type' , 'Figure'          ,   ... % Find this script's figure (possibly among others)
                     'Name'  , figName           )   ;
-if isempty(iPr.Fig1)                                    % Iff my figure does not yet exist... (was ~ishghandle)
-    iPr.Fig1 = figure(                              ... % ...make a new figure!
+if isempty(iC.P.Fig1)                                   % Iff my figure does not yet exist... (was ~ishghandle)
+    iC.P.Fig1 = figure(                             ... % ...make a new figure!
         'Name'          , figName               ,   ...
-        'Color'         , iPr.FigClr            ,   ...
+        'Color'         , iC.P.FigClr           ,   ...
         'NumberTitle'   , 'off'                 ,   ... % Removes 'Figure #: ' from the window title
         'Position'      , [ 90 25 80 60 ]*fSz   ,   ... % At pos. (90,25)% of ScreenSize, etc.
         'KeyPressFcn'   , @keyPress_callback    )   ;
 else
-    figure(iPr.Fig1)                                ;   % If my figure exists, make it the CurrentFigure
+    figure(iC.P.Fig1)                                ;   % If my figure exists, make it the CurrentFigure
 end % if
 
 t = sym('t');                                           % Set the symbolic explicitly as it's used in nested functions
-% TI2s = sym('TI2s'); TI1s(TI2s) = TI2s;                  % Temporary assignment globalizes the sym expression
-% DIR_S0(t) = ( 1 - 2*exp(-TI2/t) + 2*exp(-TI1/t) - exp(-TReff/t) ); DIR S0(T1) as a sym expression
-% TI1s(TI2s) = T1*log(2/(2*exp(-TI2s/T1) + exp(-iS.TRef/T1) - 1)) ;	  % TI1(TI2) nulling T1_n1, using syms
+% TI2s = sym('TI2s'); TI1s(TI2s) = TI2s;                % Temporary assignment globalizes the sym expression
+% DIR_S0(t) = ( 1 - 2*exp(-TI2/t) + 2*exp(-TI1/t) - exp(-TReff/t) ) ;   % DIR S0(T1) as a sym expression
+% TI1s(TI2s) = T1*log(2/(2*exp(-TI2s/T1) + exp(-iC.S.TRef/T1) - 1)) ;   % TI1(TI2) nulling T1_n1, using syms
 % % Note: Do not replace CalcTI1(TI2,T1) with TI1s(t) above: It's much slower.
 
 % Parameter presets for the first run (most can be changed in the UI)
-if isempty( ircInit )
-    ircInit = true;                                     % The program has been initialized
+if isempty( iC_Ini1 )
+    iC_Ini1 = true;                                     % The program has been initialized
 
-iS.Vnd  = ""        ;                                   % Vendor name (for sequence adjustments)
-iS.TR   = 6000.0    ; % ms                              % Repetition time, as float
-iS.ETD  =  850.0    ; % ms                              % Readout time T_Ro = ETL * ESP (GE: Check CVs after Download)
-iS.IEf  =  100      ; % %                               % Inversion efficiency in percent (are GE's SECH pulses ~98%?)
-iS.IPD  =   16.0    ; % ms                          	% Inversion pulse duration (GE/Phi used 16/17 ms HypSec in tests)
-iS.T2pOn = true     ;                                   % WIP: Turn this off when T1n is set manually (as T2 is then unknown)?
-iS.T2p  =    0.0    ; % ms                              % T2 preparation time
-iS.TOb  =   25.0    ; % ms  % WIP: Relate to iS.IPD     % TI1 outboard (Siemens: Add around 23 ms; +10? ms for T2p?)
-iS.FAx  =   90      ; % °                               % (MEX = cos(FAx*pi/180) is MagZ after excitation with angle FAx)
-iS.ESP  = 3.65; iS.IET = 0.50; % iS.ETL = 122;          % Echo Spacing, Echo Train Length and Inv.Eff. for TSE readout
+iC.S.Vnd    = ""        ;                               % Vendor name (for sequence adjustments)
+iC.S.TR     = 6000.0    ; % ms                          % Repetition time, as float
+iC.S.ETD    =  850.0    ; % ms                          % Readout time T_Ro = ETL * ESP (GE: Check CVs after Download)
+iC.S.IEf    =  100      ; % %                           % Inversion efficiency in percent (are GE's SECH pulses ~98%?)
+iC.S.IPD    =   16.0    ; % ms                          % Inversion pulse duration (GE/Phi used 16/17 ms HypSec in tests)
+iC.S.T2pOn  = true      ;                               % WIP: Turn this off when T1n is set manually (as T2 is then unknown)?
+iC.S.T2p    =    0.0    ; % ms                          % T2 preparation time
+iC.S.TOb    =   25.0    ; % ms  % WIP: Relate to iC.S.IPD   % TI1 outboard (Siemens: Add around 23 ms; +10? ms for T2p?)
+iC.S.FAx    =   90      ; % °                           % (MEX = cos(FAx*pi/180) is MagZ after excitation with angle FAx)
+iC.S.ESP    = 3.65; iC.S.IET = 0.50; % iC.S.ETL = 122;  % Echo Spacing, Echo Train Length and Inv.Eff. for TSE readout
                                                         % WIP: Just assuming incomplete inversion doesn't lead to anything!
                                                         % A proper Bloch simulation, at least w/ [ Mz, Mt ] is required.
                                                         % Actual flip angles are swept from about 10-170° to preserve Mz!
-iR.RCS  =    0.0    ; % fraction                        % Residual CSF signal at readout. Partial nulling may increase CNR.
-iS.Rew  =    0.0    ; %                                 % TODO: Rewinder after readout, regaining some of the pre-readout Mz?
-iUI.Show    = true  ;                                   % Show the UI control panel
-iPr.Mode    =    1  ;                                   % Start in mode 1, then keep the run mode over reruns
-iPr.TsSel   =    3  ;                                   % Start with a value (CSF), then keep the selection over reruns
-iPr.B0sel   =    2  ;                                   % Start with GE 3T setup, w/ relaxation times from literature/source
-SetRelaxTimes( iPr.B0sel )                              % Need to initialize relaxation times before mode.
-SetMode( iPr.Mode )                                     % Initialize mode settings
-end % if ircInit
+iC.P.RCS    =   0.0     ; % fraction                    % Residual CSF signal at readout. Partial nulling may increase CNR.
+iC.S.Rew    =   0.0     ; %                             % TODO: Rewinder after readout, regaining some of the pre-readout Mz?
+UI1.Show    =  true     ;                               % Show the UI control panel
+iC.P.Mode   =     1     ;                               % Start in mode 1, then keep the run mode over reruns
+iC.P.TsSel  =     3     ;                               % Start with a value (CSF), then keep the selection over reruns
+iC.P.B0sel  =     2     ;                               % Start with GE 3T setup, w/ relaxation times from literature/source
+SetRelaxTimes( iC.P.B0sel )                             % Need to initialize relaxation times before mode.
+SetMode( iC.P.Mode )                                    % Initialize mode settings
+end % if iC_Ini1
 
 %% MAIN
 main();
 function main()
-    iS.TRef     = iS.TR   - iS.ETD - iS.IPD         ;   % Recalculate based on current parameter settings
-    if ( iS.T2pOn )
-        iS.TRef = iS.TRef - iS.T2p                  ;
+    iC.S.TRef = iC.S.TR - iC.S.ETD - iC.S.IPD       ;   % Recalculate based on current parameter settings
+    if ( iC.S.T2pOn )
+        iC.S.TRef = iC.S.TRef - iC.S.T2p            ;
     end % if
-    iS.IE   = iS.IEf/100                            ;   % MagZ to recover after incomplete inv. (was log(2/...) etc)
-    iS.ETL  = ceil(iS.ETD/iS.ESP)                   ;   % Echo train length (# pulses) for TSE readout (ceil or floor best?)
+    iC.S.IE   = iC.S.IEf/100                        ;   % MagZ to recover after incomplete inv. (was log(2/...) etc)
+    iC.S.ETL  = ceil(iC.S.ETD/iC.S.ESP)             ;   % Echo train length (# pulses) for TSE readout (ceil or floor best?)
     
     clf                                                 % Clear the figure so we can change it
-    switch iPr.Mode
+    switch iC.P.Mode
         case 1                                          % Mode 1 (1IR tissue nulling)
-            mainSIRNul( iT.Tn1 )                    ;
+            mainSIRNul( iC.T.Tn1 )                  ;
         case 2                                          % Mode 2 (DIR tissue nulling)
-            iS.TRef = iS.TRef - iS.IPD              ;   % Subtract one more inversion pulse duration for DIR        WIP
-            mainDIRNul( iT.Tn1, iT.Tn2 )            ;
+            iC.S.TRef = iC.S.TRef - iC.S.IPD        ;   % Subtract one more inversion pulse duration for DIR        WIP
+            mainDIRNul( iC.T.Tn1, iC.T.Tn2 )        ;
         case 3                                          % Mode 3 (T1W nulling)
-            iS.TRef = iS.TRef - iS.IPD              ;   % Subtract one more inversion pulse duration for DIR        WIP
-            Tn2 = mainT1WNul()                      ;   % ( T1_CSF, T1_WM, T1_MS )  % TODO: Set iT.Tn2 = mainT1... here?
+            iC.S.TRef = iC.S.TRef - iC.S.IPD        ;   % Subtract one more inversion pulse duration for DIR        WIP
+            Tn2 = mainT1WNul()                      ;   % ( T1_CSF, T1_WM, T1_MS )  % TODO: Set iC.T.Tn2 = mainT1... here?
     end
     IR_CreateUI();
-%     if saveImg, saveFigAsImg(),end                      % Automatically save the fig. as an image (or use the fig. menu)
+%     if saveImg, saveFigAsImg(),end                    % Automatically save the fig. as an image (or use the fig. menu)
 end % main
 
 % 1) Calculate TI in a 1IR/STIR/FLAIR sequence, nulling a specified T1 time
 function mainSIRNul( T1z1 )
-    iT.T1z = T1z1                                   ;   % What T1 are we concerned with nulling?
-    Tis = Ts.T(:,iPr.TsSel)                         ;   % What tissue is selected? (Needed for T2prep)
+    iC.T.T1z = T1z1                                 ;   % What T1 are we concerned with nulling?
+    Tis = iC.M.T(:,iC.P.TsSel)                      ;   % What tissue is selected? (Needed for T2prep)
     E2  = CalcPE2( Tis )                            ;   % Calculate E2 if using T2prep (=1 otherwise)
-    if ( iS.Vnd == "GE" )
-        Ts.Mze  = [ 0.0, 0.0, 0.045, 0.0, 0.0 ]     ;   % GE "Mz @ end of CUBE train w/ 130° max FA"; only used for FLAIR
+    if ( iC.S.Vnd == "GE" )
+        iC.M.Mze  = [ 0.0, 0.0, 0.045, 0.0, 0.0 ]   ;   % GE "Mz @ end of CUBE train w/ 130° max FA"; only used for FLAIR
     else
-        Ts.Mze  = [ 0.0, 0.0, 0.0  , 0.0, 0.0 ]     ;   % [ WM, GM, CSF, MS, Fat ] Mz @ readout end (only used by GE or...?)
+        iC.M.Mze  = [ 0.0, 0.0, 0.0  , 0.0, 0.0 ]   ;   % [ WM, GM, CSF, MS, Fat ] Mz @ readout end (only used by GE or...?)
     end % if
-    Mze = Ts.Mze( iPr.TsSel )                       ;   % End Mz for the tissue (GE value for XETA/Cube refocusing train)
-    iT.Ti1n = CalcTInT1( iT.T1z, E2, 1-Mze )        ;   % Calc. TI to null T1z
-    iT.Ti1n = uint16(round( iT.Ti1n + iS.IPD ))     ;   % Add the inversion pulse duration; make value int for plot display
+    Mze = iC.M.Mze( iC.P.TsSel )                    ;   % End Mz for the tissue (GE value for XETA/Cube refocusing train)
+    iC.T.Ti1n = CalcTInT1( iC.T.T1z, E2, 1-Mze )    ;   % Calc. TI to null T1z
+    iC.T.Ti1n = uint16(round( iC.T.Ti1n + iC.S.IPD ))   ;   % Add the inversion pulse duration; make value int for plot display
     
-    TInts = [ 0, iT.Ti1n, iS.TR ]                   ;   % SIR: Inversion is at t = 0, then readout at TI
-    IR_T1_Magplot( TInts )                          ;   % Plot Z magnetization (Mz) of several tissue T1s over time
+    TInts = [ 0, iC.T.Ti1n, iC.S.TR ]               ;   % SIR: Inversion is at t = 0, then readout at TI
+    IR_T1_MagPlot( TInts )                          ;   % Plot Z magnetization (Mz) of several tissue T1s over time
     
     figTitle( "Single IR tissue nulling" )              % Add an informative title to the plot
     fStr = ['\\itTissue T1 time:\n\\rm'             ...
@@ -217,15 +216,15 @@ function mainSIRNul( T1z1 )
             '  \n'                                  ...
             '\\itTissue nulling IR:\n\\rm\\bf'      ...
             '  TI_{n}    = %4.i ms'             ]   ;
-    fVar = [ uint16(iT.T1z), uint16(iT.Ti1n) ]      ;
-    if ( iS.Vnd == "Siemens" )
+    fVar = [ uint16(iC.T.T1z), uint16(iC.T.Ti1n) ]  ;
+    if ( iC.S.Vnd == "Siemens" )
         fStr = [ fStr,                              ...
             '\n\\rm  TI_{Sie} = %4.i ms'        ]   ;
-        fVar = [ fVar, SieT(iT.Ti1n)  ]             ;
+        fVar = [ fVar, SieT(iC.T.Ti1n)  ]           ;
     end % if
     figTextBox( fStr, fVar )                        ;   % Display an info text box on the figure
     
-    iPr.pStr = [                           '\n'     ...
+    iC.P.pStr = [                           '\n'    ...
             '*******************************\n'     ...
             '***    IR tissue nulling:   ***\n'     ...
             '*******************************\n'     ...
@@ -233,38 +232,37 @@ function mainSIRNul( T1z1 )
             '*******************************\n'     ...
             '*  Nulling TI      = %4.i ms  *\n'     ...
             '*******************************\n' ]   ;
-    iPr.pVar = [ iT.T1z, iT.Ti1n ]                  ;
-    if ( iS.Vnd == "Siemens" )
-        iPr.pStr = strcat( iPr.pStr, [              ...
+    iC.P.pVar = [ iC.T.T1z, iC.T.Ti1n ]             ;
+    if ( iC.S.Vnd == "Siemens" )
+        iC.P.pStr = strcat( iC.P.pStr, [            ...
             '***      For Siemens:       ***\n'     ...
             '*******************************\n'     ...
             '*  TI              = %4.i ms  *\n'     ...
             '*******************************\n' ] ) ;
-        iPr.pVar = horzcat( iPr.pVar,SieT(iT.Ti1n) );   % Take into account T2p and some outboard time for Siemens
+        iC.P.pVar = horzcat( iC.P.pVar,SieT(iC.T.Ti1n) ) ;  % Take into account T2p and some outboard time for Siemens
     end % if
-%     if ( iS.Vnd == "GE" )
-%         iPr.pStr = strcat( iPr.pStr, [              ...
+%     if ( iC.S.Vnd == "GE" )
+%         iC.P.pStr = strcat( iC.P.pStr, [            ...
 %             '***      For GE (DV25):     ***\n'     ...
 %             '*******************************\n'     ...
 %             '*  TI              = %4.i ms  *\n'     ...
 %             '*******************************\n' ] ) ;
-%         iPr.pVar = horzcat( iPr.pVar, iT.Ti1n + 82 );   % Estimated from experiments by WN/ØBG 2018-09-26
-%     end % if                                            % NOTE: We do better now, with the new GE corrections!
+%         iC.P.pVar = horzcat( iC.P.pVar, iC.T.Ti1n + 82 );   % Estimated from experiments by WN/ØBG 2018-09-26
+%     end % if                                                % NOTE: We do better now, with the new GE corrections!
 
 end % mainSIRNul
 
 % 2) Calculate TI1+TI2 in a DIR sequence, nulling two specified T1 times (T1_n1 = T1_CSF by default)
 function mainDIRNul( T1z1, T1z2 )
-    iT.T1z = T1z2                                   ;   % What T1 are we concerned with nulling?
-    Tis = [ Ts.T(:,3), Ts.T(:,iPr.TsSel) ]          ;   % CSF and selected tissue (needed for T2prep)
+    iC.T.T1z = T1z2                                 ;   % What T1 are we concerned with nulling?
+    Tis = [ iC.M.T(:,3), iC.M.T(:,iC.P.TsSel) ]     ;   % CSF and selected tissue (needed for T2prep)
     E2 = CalcPE2( Tis )                             ;   % Calculate E2 if using T2prep (=1 otherwise)
-    [ iT.Ti1n, iT.Ti2n ] = Find2TIn2T1([T1z1,T1z2],E2); % Inversion times that null 2 T1
-    iT.Ti1n = uint16(round( iT.Ti1n + iS.IPD*2 ))   ;   % Add the inversion pulse durations
-    iT.Ti2n = uint16(round( iT.Ti2n + iS.IPD   ))   ;   % Cast as int for plot display; ceil()/round() don't change syms!
+    [ iC.T.Ti1n, iC.T.Ti2n ] = Find2TIn2T1([T1z1,T1z2],E2); % Inversion times that null 2 T1
+    iC.T.Ti1n = uint16(round( iC.T.Ti1n + iC.S.IPD*2 )) ;   % Add the inversion pulse durations
+    iC.T.Ti2n = uint16(round( iC.T.Ti2n + iC.S.IPD   )) ;   % Cast as int for plot display; ceil()/round() don't change syms!
     
-    TInts = [ 0, (iT.Ti1n-iT.Ti2n), iT.Ti1n, iS.TR ];   % DIR: Vector of all time points (inversion, readout and end)
-    IR_T1_Magplot( TInts )                          ;
-%     PlotMagZ( TInts )                               ;   % Plot Z magnetization over time [returned end MagZ vector w/ Mzt = ]
+    TInts = [ 0, (iC.T.Ti1n-iC.T.Ti2n), iC.T.Ti1n, iC.S.TR ] ;  % DIR: Vector of all time points (inversion, readout and end)
+    IR_T1_MagPlot( TInts )                          ;   % Plot Z magnetization over time [PlotMagZ used to return end MagZ vector]
 
     figTitle( "DIR dual tissue nulling" )               % Add an informative title to the plot
     
@@ -275,10 +273,10 @@ function mainDIRNul( T1z1, T1z2 )
             '\\itTissue nulling DIR:\n\\rm\\bf'     ...
             '  TI_{1}    = %4.i ms\n'               ...
             '  TI_{2}    = %4.i ms'             ]   ;
-    fVar = [ T1z1, T1z2, iT.Ti1n, iT.Ti2n ]         ;
+    fVar = [ T1z1, T1z2, iC.T.Ti1n, iC.T.Ti2n ]     ;
     figTextBox( fStr, fVar )                        ;   % Display an info text box on the figure
     
-    iPr.pStr = [                           '\n'     ...
+    iC.P.pStr = [                           '\n'    ...
             '*******************************\n'     ...
             '***   DIR tissue nulling:   ***\n'     ...
             '*******************************\n'     ...
@@ -289,62 +287,62 @@ function mainDIRNul( T1z1, T1z2 )
             '*  TI2             = %4.i ms  *\n'     ...
             '*******************************\n' ]   ;
 %             '*  TI1 - TI2       = %4.i ms  *\n'     ...
-    iPr.pVar = [ T1z1, T1z2, iT.Ti1n, iT.Ti2n ]     ;   % , (iT.Ti1n-iT.Ti2n)
-    if ( iS.Vnd == "GE" )
-        iPr.pStr = strcat( iPr.pStr, [              ...
+    iC.P.pVar = [ T1z1, T1z2, iC.T.Ti1n, iC.T.Ti2n ]    ;   % , (iC.T.Ti1n-iC.T.Ti2n)
+    if ( iC.S.Vnd == "GE" )
+        iC.P.pStr = strcat( iC.P.pStr, [            ...
             '***   Times for GE (DV25):  ***\n'     ...
             '*******************************\n'     ...
             '*  TI1             = %4.i ms  *\n'     ... % Estimated from experiments by WN/ØBG 2018-09-26
             '*  TI2             = %4.i ms  *\n'     ... % --"--
             '*******************************\n' ] ) ;
-        iPr.pVar = horzcat( iPr.pVar, [ uint16( iT.Ti1n + iS.TRef*0.038 - 80 ), iT.Ti2n + 12 ] );
+        iC.P.pVar = horzcat( iC.P.pVar, [ uint16( iC.T.Ti1n + iC.S.TRef*0.038 - 80 ), iC.T.Ti2n + 12 ] ) ;
     end % if
 
 end % mainDIRNul
 
 % 3) Calculate & plot MRI S0 of WM vs MS/WML in a DIR sequence, and TI1+TI2 nulling their T1 weighting
 function T1z2 = mainT1WNul()                            % T1_nulled = T1WNul( T1_CSF, T1_WM, T1_MS )
-    T1W = Ts.T(1,1); T1L = Ts.T(1,4);   % T1C = Ts.T(1,3);  % (CSF, WM, WML)
-%     T2C = Ts.T(2,3); T2W = Ts.T(2,1); T2L = Ts.T(2,4);    % (--"--)
-    iT.T1z = iT.Tn1; % Ts.T(1,iPr.TsSel)            ;               % What T1 are we concerned with nulling? TODO: T1C? Allow T1_n1.
-    T1C = iT.T1z                                    ;   % Override T1C with the set value (we keep T2C from selection)
-    Tis = Ts.T(:, [ 3 1 4 ] )                       ;   % CSF, WM, WML (needed for T2prep)
+    T1W = iC.M.T(1,1) ; T1L = iC.M.T(1,4) ; % T1C = iC.M.T(1,3) ;   % (CSF, WM, WML)
+%     T2C = iC.M.T(2,3) ; T2W = iC.M.T(2,1) ; T2L = iC.M.T(2,4) ;   % (--"--)
+    iC.T.T1z = iC.T.Tn1 ;   % iC.M.T(1,iC.P.TsSel)  ;               % What T1 are we concerned with nulling? TODO: T1C? Allow T1_n1.
+    T1C = iC.T.T1z                                  ;   % Override T1C with the set value (we keep T2C from selection)
+    Tis = iC.M.T(:, [ 3 1 4 ] )                     ;   % CSF, WM, WML (needed for T2prep)
     E2 = CalcPE2( Tis )                             ;   % Calculate E2 if using T2prep (=1 otherwise)
     E2C = E2(1)    ; E2W = E2(2)    ; E2L = E2(3)   ;   % (CSF, WM, WML)
-    iT.Ti2max = T1C*log( (1+iS.IE)/(1+iS.IE*exp(-iS.TRef/T1C)) ); % Max TI2 nulling T1C, usually CSF (@ max TI1 = TReff)
-%     iT.Ti2max = T1C*log(2/(1 + 2*exp(-iS.TR/T1C) - exp(-iS.TRef/T1C))); % Old Ti2max calculation without InvEff/T2P
-    Ti2 = 1:1:iT.Ti2max; DUR = length(Ti2)          ;   % Vector of TI2 values 1 ms apart (could've used linspace() here)
+    iC.T.Ti2max = T1C*log( (1+iC.S.IE)/(1+iC.S.IE*exp(-iC.S.TRef/T1C)) ); % Max TI2 nulling T1C, usually CSF (@ max TI1 = TReff)
+%     iC.T.Ti2max = T1C*log(2/(1 + 2*exp(-iC.S.TR/T1C) - exp(-iC.S.TRef/T1C))); % Old Ti2max calculation without InvEff/T2P
+    Ti2 = 1:1:iC.T.Ti2max; DUR = length(Ti2)        ;   % Vector of TI2 values 1 ms apart (could've used linspace() here)
     Ti1 = zeros(DUR,1)                              ;   % Vector of TI1 values for all TI2s; replace by TI1s(TI2s)?
     S0_DIR = zeros(DUR,2)                           ;   % Array of two DIR signals@TE=0 for TI2s
     
-%     TI1s(t) = CalcTI1(t,T1C);                           % TI1(TI2) calc.
+%     TI1s(t) = CalcTI1(t,T1C);                         % TI1(TI2) calc.
     for i = 1:DUR
         Ti1(i)      = CalcTi1D(Ti2(i),T1C,E2C)      ;   % TI1(TI2) calc. for T1_CSF
-        S0_DIR(i,1) = CalcS0([Ti1(i),Ti2(i)],T1W,E2W);  % S0(TI2) calc. (was CalcS0D(TI1(i),TI2(i),T1W) )
-        S0_DIR(i,2) = CalcS0([Ti1(i),Ti2(i)],T1L,E2L);  % --"--
+        S0_DIR(i,1) = CalcS0([Ti1(i),Ti2(i)],T1W,E2W) ; % S0(TI2) calc. (was CalcS0D(TI1(i),TI2(i),T1W) )
+        S0_DIR(i,2) = CalcS0([Ti1(i),Ti2(i)],T1L,E2L) ; % --"--
     end
     
-    iT.Ti2n = uint16( FindTi2nT1W(Tis(1,:),E2) )    ;   % Find TI2 to null the DIR T1 weighting between two T1s (T1C, T1W, T1L)
-    iT.Ti1n = uint16( CalcTi1D(iT.Ti2n,T1C,E2C)  )  ;   % TI1(TI2) calc. by function (uint to avoid e+ notation in fig. text)
-%     iT.Ti1n = uint16(TI1s( iT.Ti2n ));                  % TI1(TI2) calc. by symbolic expr. (slower?!)
+    iC.T.Ti2n = uint16( FindTi2nT1W(Tis(1,:),E2) )  ;   % Find TI2 to null the DIR T1 weighting between two T1s (T1C, T1W, T1L)
+    iC.T.Ti1n = uint16( CalcTi1D(iC.T.Ti2n,T1C,E2C) ) ; % TI1(TI2) calc. by function (uint to avoid e+ notation in fig. text)
+%     iC.T.Ti1n = uint16(TI1s( iC.T.Ti2n ));            % TI1(TI2) calc. by symbolic expr. (slower?!)
     
     % NOTE: GE operates with a guessed T2 when T1 is set manually. DV25: T2wm; RX27: T2gm. But is it used for T2prep?
     % WIP: For now, let's ignore T2prep w/ E=1. Judging from observation, that's what GE does too!?
-    iT.Tn2 = uint16( FindT1null([iT.Ti1n,iT.Ti2n],1) ); % Second tissue nulled by DIR. UInt for display.
-    T1z2 = iT.Tn2                                   ;   % This function outputs the fictive T1 nulled
-    iS.newS = S0_DIR(iT.Ti2n,1)                     ;   % WM signal at readout; = WML signal here
+    iC.T.Tn2 = uint16( FindT1null([iC.T.Ti1n,iC.T.Ti2n],1) ); % Second tissue nulled by DIR. UInt for display.
+    T1z2 = iC.T.Tn2                                 ;   % This function outputs the fictive T1 nulled
+    iC.S.newS = S0_DIR(iC.T.Ti2n,1)                 ;   % WM signal at readout; = WML signal here
     
     hold on
     plot( Ti2, S0_DIR(:,1), 'r-', 'LineWidth', 1.0 )    % Plot the signals calculated above
     plot( Ti2, S0_DIR(:,2), 'b-', 'LineWidth', 1.0 )
-%     S0W_t   = CalcS0([iT.Ti1n,iT.Ti2n],T1W,E2W)     ;   % DEBUG: S0(Ti1,Ti2) calc.
-%     S0L_t   = CalcS0([iT.Ti1n,iT.Ti2n],T1L,E2L)     ;   % --"--
+%     S0W_t   = CalcS0([iC.T.Ti1n,iC.T.Ti2n],T1W,E2W)     ;   % DEBUG: S0(Ti1,Ti2) calc.
+%     S0L_t   = CalcS0([iC.T.Ti1n,iC.T.Ti2n],T1L,E2L)     ;   % --"--
 %     disp( "    S0W,      S0L      (Debug T1null)" )
 %     disp( [ S0W_t, S0L_t ] )
 %     plot(Ti2,Ti1)                                   ;   % DEBUG: Plot the TI1 calculated for each TI2
 %     S0_DIFF = abs(S0_DIR(:,1)-S0_DIR(:,2))          ;   % DEBUG: Calculate signal difference between two T1s
 %     [~,minind] = min(S0_DIFF)                       ;   % Find the T1Wnull crossing graphically (as [minval,minind])
-%     iT.Ti2n = Ti2(minind)                           ;
+%     iC.T.Ti2n = Ti2(minind)                         ;
 %     plot(Ti2,S0_DIFF)                               ;   % DEBUG: Plot the WM/MS signal difference
     hold off
     
@@ -353,19 +351,19 @@ function T1z2 = mainT1WNul()                            % T1_nulled = T1WNul( T1
     figTitle( "T1-DIR (T1W nulling)" )                  % Add an informative title to the plot
     ylabel('Rel. MR signal (TE = 0 ms)' , 'FontSize' , 12 )
     xlabel('TI_2 inversion time (ms)'   , 'FontSize' , 12 )
-    xlm = [ 0 200*ceil( iT.Ti2max/200 ) ]; xlim(xlm);   % Round up to 200 on the x axis
-    ylm = [ -1 1 ];                        ylim(ylm);   % Rel. S0 is in [-1,1]
+    xlm = [ 0 200*ceil( iC.T.Ti2max/200 ) ]; xlim(xlm); % Round up to 200 on the x axis
+    ylm = [ -1 1 ];                          ylim(ylm); % Rel. S0 is in [-1,1]
     
     LegT = [ 1 4 ]                                  ;   % Make a legend for tissue 1(WM) & 4(MS)...
     NT1s = length(LegT); LegS = strings(1,NT1s)     ;
     for i = 1:NT1s, j = LegT(i)                     ;   % ...showing the tissue short names and T1 times
-        LegS(i) = sprintf('%s (T1 = %i ms)', Ts.Tag(1,j), Ts.T(1,j) );
+        LegS(i) = sprintf('%s (T1 = %i ms)', iC.M.Tag(1,j), iC.M.T(1,j) );
     end
     legend( LegS(1) , LegS(2) ,                     ... % Was: legend( 'WM', 'MS', ...
             'Location'  , 'NorthWest'           )   ;   % 'Best' may conflict with UI and TextBox
     
-    lxlm = [ iT.Ti2n iT.Ti2n ]                      ;   % S0 crossing x (=TI2) value
-%     lylm = [ ylm(1) S0_DIR(lxlm(1),1) ];                % Lower/upper y of line (=S0 curve)
+    lxlm = [ iC.T.Ti2n iC.T.Ti2n ]                  ;   % S0 crossing x (=TI2) value
+%     lylm = [ ylm(1) S0_DIR(lxlm(1),1) ];              % Lower/upper y of line (=S0 curve)
     lylm = [ ylm(1) 0 ]                             ;   % Lower/upper y of line (= 0)
     line( lxlm, lylm,                               ... % Vertical line @ crossing
         'Color'         , 'black'               ,   ...
@@ -380,10 +378,10 @@ function T1z2 = mainT1WNul()                            % T1_nulled = T1WNul( T1
             '  TI_{1}    = %4.i ms\n'               ...
             '  TI_{2}    = %4.i ms\n'               ...
             '  T1_{nt}  = %4.i ms'              ]   ;
-    fVar = [ iT.Ti1n, iT.Ti2n, T1z2 ]               ;   % Was: T1_WM, T1_MS, etc
+    fVar = [ iC.T.Ti1n, iC.T.Ti2n, T1z2 ]               ;   % Was: T1_WM, T1_MS, etc
     figTextBox( fStr, fVar )                        ;   % Display an info text box on the figure
 
-    iPr.pStr = [                           '\n'     ...
+    iC.P.pStr = [                           '\n'    ...
             '*******************************\n'     ...
             '***    DIR T1-W nulling:    ***\n'     ...
             '*******************************\n'     ...
@@ -394,28 +392,28 @@ function T1z2 = mainT1WNul()                            % T1_nulled = T1WNul( T1
             '*  TI2             = %4.i ms  *\n'     ...
             '*  TI1 - TI2       = %4.i ms  *\n'     ...
             '*******************************\n' ]   ;
-    iPr.pVar = [ T1C, T1z2, iT.Ti1n, iT.Ti2n, (iT.Ti1n-iT.Ti2n) ];
+    iC.P.pVar = [ T1C, T1z2, iC.T.Ti1n, iC.T.Ti2n, (iC.T.Ti1n-iC.T.Ti2n) ];
     
 end % mainT1WNul
 
 %% FUNCTIONS
 function FltSym = FoS( inNr )                           % Cast as double for, e.g., exp() unless it's used as a sym
-    if  isa( inNr , 'sym' ) , FltSym = inNr         ;   % TODO: This exists both in the main script and T2_Subplot now.
+    if  isa( inNr , 'sym' ) , FltSym = inNr         ;   % TODO: This exists both in the main script and T2_SigPlot now.
     else,                     FltSym = double(inNr) ;
     end % if
 end % fcn
 
 function SieTI = SieT( TI )                             % Add outboard time estimated for the Siemens sequence
-    SieTI = TI + iS.TOb                             ;   % TODO: Rework this for Sie+Phi? Can use iS.TOb for Sie but not Phi?
-    if ( iS.T2pOn ) && ( iS.T2p > 0 )                   % Add a little extra outboard (10 ms?) for T2 prep?
-        SieTI = SieTI + iS.T2p                      ;   % Was + 10 for T2prep, but that's iffy...
+    SieTI = TI + iC.S.TOb                           ;   % TODO: Rework this for Sie+Phi? Can use iC.S.TOb for Sie but not Phi?
+    if ( iC.S.T2pOn ) && ( iC.S.T2p > 0 )               % Add a little extra outboard (10 ms?) for T2 prep?
+        SieTI = SieTI + iC.S.T2p                    ;   % Was + 10 for T2prep, but that's iffy...
     end % if
     SieTI = uint16(SieTI)                           ;
 end % fcn
 
 function E2 = CalcPE2( T1T2 )                           % Calculate E2 for T2prep for a (vector of) T2 time(s)
-    if ( iS.T2pOn ) && ( size(T1T2,1) > 1 )             % Only use the T2prep formula if T2 is known
-        E2 = exp( -iS.T2p./T1T2(2,:) )              ;
+    if ( iC.S.T2pOn ) && ( size(T1T2,1) > 1 )           % Only use the T2prep formula if T2 is known
+        E2 = exp( -iC.S.T2p./T1T2(2,:) )            ;
     else
         E2 = ones(1,size(T1T2,2))                   ;
     end % if
@@ -425,49 +423,49 @@ end % fcn
 function S0_IR      = CalcS0( Ti, T1, E2 )              % Calculate generic IR relative S0 (def: S/M0 = E2*S0 @ TE=0 ms)
     Ti = FoS(Ti); T1 = FoS(T1)                      ;   % Cast input as float unless it's a sym
     NI = length( Ti ); S0_IR = ones( 1,length(T1) ) ;   % Ti() are defined as time to readout
-    IE  = iS.IE                                     ;   % Inv.Eff.
+    IE  = iC.S.IE                                   ;   % Inv.Eff.
     for i = 0:NI-2    % (was 0:NInv-1)
         S0_IR = S0_IR - (-IE)^i*(1+IE).*exp(-Ti(NI-i)./T1)  ;   % Step backwards through the inversions
     end
     S0_IR = S0_IR - (-IE)^(NI-1)*(1+IE*E2).*exp(-Ti(1)./T1) ;   % The last step includes E2 for T2prep
-    S0_IR = S0_IR - (-IE)^(NI-0)*E2.*exp(-iS.TRef./T1)      ;   % Gives one signal value per given T1
+    S0_IR = S0_IR - (-IE)^(NI-0)*E2.*exp(-iC.S.TRef./T1)    ;   % Gives one signal value per given T1
 end % fcn                                               % NOTE: Inv. pulse dur. isn't incorporated in these calculations
 
 % function S0_IR      = CalcS0S( Ti, T1, E2 )             % Calculate single IR relative S0 (def: S0 = S/(E2*M0) @ TE=0)
 %     Ti = FoS(Ti); T1 = FoS(T1)                      ;   % Cast input as float unless it's a sym
-%     S0_IR = 1 - (1+iS.IE*E2).*exp(-Ti./T1) + iS.IE*E2.*exp(-iS.TRef./T1);
+%     S0_IR = 1 - (1+iC.S.IE*E2).*exp(-Ti./T1) + iC.S.IE*E2.*exp(-iC.S.TRef./T1) ;
 % end % fcn
 
 % function S0_DIR     = CalcS0D( Ti1, Ti2, T1, E2 )       % Calculate DIR relative S0 (def: S0 = S/(E2*M0) @ TE=0)
 %     Ti1 = FoS(Ti1); Ti2 = FoS(Ti2); T1 = FoS(T1)    ;   % Cast input as float unless it's a sym
-%     IE  = iS.IE                                     ;   % Inv.Eff.
-%     S0_DIR = 1 - (1+IE).*exp(-Ti2./T1) + IE*(1+IE*E2).*exp(-Ti1./T1) - IE^2*E2.*exp(-iS.TRef./T1);
+%     IE  = iC.S.IE                                   ;   % Inv.Eff.
+%     S0_DIR = 1 - (1+IE).*exp(-Ti2./T1) + IE*(1+IE*E2).*exp(-Ti1./T1) - IE^2*E2.*exp(-iC.S.TRef./T1) ;
 % end % fcn
 
 function TI_SIR     = CalcTInT1( T1, E2, MC )           % Calc. TI nulling T1 in a single IR sequence w/ T2prep and Mz corr.
     T1 = FoS(T1)                                    ;   % Cast input as float unless it's a sym
-%     TI_SIR = log(2)*T1;                                 % The simple case, TR>>T1, gives TIn = ln(2)*T1 ~ 0.69*T1
+%     TI_SIR = log(2)*T1                            ;   % The simple case, TR>>T1, gives TIn = ln(2)*T1 ~ 0.69*T1
     TI_SIR =    ...
-        T1*log( (1+iS.IE.*E2) ./ ( 1-iR.RCS + iS.IE*MC.*E2.*exp(-iS.TRef./T1) ) );  % 1IR TI nulling T1
+        T1*log( (1+iC.S.IE.*E2) ./ ( 1-iC.P.RCS + iC.S.IE*MC.*E2.*exp(-iC.S.TRef./T1) ) );  % 1IR TI nulling T1
 end % fcn
 
 function TI1_DIR    = CalcTi1D( Ti2, T1, E2 )           % Calc. TI1 (new TI1, the old one was - TI2) nulling T1 given TI2
     Ti2 = FoS(Ti2); T1 = FoS(T1)                    ;   % Cast input as float unless it's a sym
-    IE  = iS.IE                                     ;   % Inv.Eff.
+    IE  = iC.S.IE                                   ;   % Inv.Eff.
     TI1_DIR =	...
-        T1.*log( IE*(1+IE*E2)./( -(1+iR.RCS) + (1+IE).*exp(-Ti2./T1) + IE^2*E2.*exp(-iS.TRef./T1) ) );  % (May be a sym)
+        T1.*log( IE*(1+IE*E2)./( -(1+iC.P.RCS) + (1+IE).*exp(-Ti2./T1) + IE^2*E2.*exp(-iC.S.TRef./T1) ) );  % (May be a sym)
 end % fcn
 
 function S0_nD      = CalcS0for0( Ti2, T1d, E2d )       % Calc. S0 from a DIR T1 found, combining CalcS0D+TI1D for sanity
     Ti2 = FoS(Ti2); T1d = FoS(T1d)                  ;   % Cast input as float unless it's a sym (also, using 1x1 vars here)
     T1 = T1d(1); E2 = E2d(1)                        ;
-    IE  = iS.IE                                     ;   % Inv.Eff.
+    IE  = iC.S.IE                                   ;   % Inv.Eff.
     Ti1 =       ...
-        T1*log( IE*(1+IE*E2)/( -(1+iR.RCS) + (1+IE)*exp(-Ti2/T1) + IE^2*E2*exp(-iS.TRef/T1) ) ); % No .* ./ here: Only one T1
+        T1*log( IE*(1+IE*E2)/( -(1+iC.P.RCS) + (1+IE)*exp(-Ti2/T1) + IE^2*E2*exp(-iC.S.TRef/T1) ) ); % No .* ./ here: Only one T1
     T1 = T1d(2); E2 = E2d(2)                        ;
-%     S0_nD  = CalcS0( [ Ti1, Ti2 ], T1(2), E2(2) )   ;
+%     S0_nD  = CalcS0( [ Ti1, Ti2 ], T1(2), E2(2) ) ;
     S0_nD =     ...
-        1 - (1+IE)*exp(-Ti2/T1) + IE*(1+IE*E2)*exp(-Ti1/T1) - IE^2*E2*exp(-iS.TRef/T1);
+        1 - (1+IE)*exp(-Ti2/T1) + IE*(1+IE*E2)*exp(-Ti1/T1) - IE^2*E2*exp(-iC.S.TRef/T1);
 end % fcn
 
 function [ Ti1n, Ti2n ] = Find2TIn2T1( T1d, E2 )        % Find TI1/TI2 that null two T1 (e.g., CSF and WM) in DIR
@@ -490,13 +488,13 @@ function T1n_DIR    = FindT1null( Ti12, E2 )            % Find the second T1 tim
     T1n_DIR = vpasolve( CalcS0(Ti12,t,E2), t)       ;   % Solve S0DIR == 0 for T1
 end % fcn
 
-function SetMode( mode )                                % Sets the run mode and resets the Nulling selection (iPr.TsSel)
+function SetMode( mode )                                % Sets the run mode and resets the Nulling selection (iC.P.TsSel)
     % WIP: Merge SetMode with SetT1n()?!
-    oldMode = iPr.Mode                              ;   % WIP: If oldMode = mode, just skip to SetT1n!? But not on first run?
-%     iT.Tn1 = Ts.T(1,3)                            ;   % Default for all modes: Null out CSF as the longest T1
+    oldMode = iC.P.Mode                             ;   % WIP: If oldMode = mode, just skip to SetT1n!? But not on first run?
+%     iC.T.Tn1 = iC.M.T(1,3)                        ;   % Default for all modes: Null out CSF as the longest T1
     switch mode
         case 1                                          % 1IR default: Null out CSF (=FLAIR)
-            iT.Tn1 = Ts.T(1,3)                      ;
+            iC.T.Tn1 = iC.M.T(1,3)                  ;
             SetT1n( 1, 3 )                          ;
         case 2                                          % DIR default: Null out WM as tissue 2
             if ( oldMode == 3 )
@@ -506,9 +504,9 @@ function SetMode( mode )                                % Sets the run mode and 
             end % if
         case 3                                          % T1W-DIR default: (Null out CSF as the longest T1)
     end % switch
-    iPr.Mode = mode                                 ;   % Make the mode setting global
+    iC.P.Mode = mode                                ;   % Make the mode setting global
     if ( mode ~= 3 ) && ( oldMode ~= 3 )
-        SetRelaxTimes( iPr.B0sel )                      % Vendor implementation and mode may affect relaxation time settings
+        SetRelaxTimes( iC.P.B0sel )                     % Vendor implementation and mode may affect relaxation time settings
     end % if
 end % fcn
 
@@ -516,15 +514,15 @@ function SetT1n( mode, T1s )                            % Sets the Nulling selec
     if ( T1s > 0 )
         switch mode
             case 1                                      % 1IR (only one tissue nulled)
-                iT.Tn1 = Ts.T(1,T1s)                ;
+                iC.T.Tn1 = iC.M.T(1,T1s)            ;
             otherwise                                   % DIR (set second T1 to null; the first is CSF by default)
-                if Ts.T(1,T1s) >= iT.Tn1, T1s=1; end    % Don't null Tn1/CSF twice; use WM as tissue 2 instead then.
-                iT.Tn2 = Ts.T(1,T1s)                ;
+                if iC.M.T(1,T1s) >= iC.T.Tn1, T1s=1; end    % Don't null Tn1/CSF twice; use WM as tissue 2 instead then.
+                iC.T.Tn2 = iC.M.T(1,T1s)            ;
         end % switch
     else
         T1s = -T1s                                  ;
     end % if
-    iPr.TsSel = T1s                                 ;
+    iC.P.TsSel = T1s                                ;
     
     switch mode                                         % Reset which T1 times to plot, based on mode. TODO: Change this?!?
         case 1                                          % 1IR: Plot Mz for brain tissues (WM, GM, CSF, WML?)
@@ -534,32 +532,30 @@ function SetT1n( mode, T1s )                            % Sets the Nulling selec
         case 3                                          % T1W-DIR: Plot the signal for WM and WML
             i = [ 1 4 ]                             ;   % NOTE: This is not implemented yet; Mode 3 uses its own plot
     end % switch
-    Ts.Plt = Ts.T(:,i); Ts.Leg = Ts.Tag(1,i)        ;   % Update the T1 times to plot and their label texts
+    iC.M.Plt = iC.M.T(:,i); iC.M.Leg = iC.M.Tag(1,i)        ;   % Update the T1 times to plot and their label texts
 end % fcn
 
 function SetRelaxTimes( B0opt )
     T1_CSF = IR_SetRelaxTimes( B0opt )              ;   % This is in a separate file to make this one shorter and things clearer
     
-    iT.Tn1 = T1_CSF                                 ;   % Default for all modes: Null out CSF as the longest T1
-    switch iPr.Mode                                     % When a scheme is selected, adjust the nulling selection accordingly.
-        % TODO: Remove this switch; just call SetT1n( iPr.TsSel ) and let the function handle iPr.Mode!
+    iC.T.Tn1 = T1_CSF                               ;   % Default for all modes: Null out CSF as the longest T1
+    switch iC.P.Mode                                    % When a scheme is selected, adjust the nulling selection accordingly.
+        % TODO: Remove this switch; just call SetT1n( iC.P.TsSel ) and let the function handle iC.P.Mode!
         case 1                                          % 1IR T1 nulling
-            SetT1n( 1, iPr.TsSel )                  ;
+            SetT1n( 1, iC.P.TsSel )                 ;
         case 2                                          % DIR T1 nulling
-            SetT1n( 2, iPr.TsSel )                  ;
+            SetT1n( 2, iC.P.TsSel )                 ;
         case 3                                          % T1W nulling
     end % switch
-%     toggleT2prep( true )                            ;   % T2prep is compatible with tissue selection
+%     toggleT2prep( true )                          ;   % T2prep is compatible with tissue selection
 end % setRelaxTimes
 
 %% PLOT
 
-% Note: The PlotMagZ function was moved to another file since this file is so long
-
 function figTitle( startStr )                           % Add an informative title to the MagZ plot
-    txt = [ char(startStr) ' at ' iPr.B0tag ', TR_{eff} = ' num2str(iS.TRef) ' ms' ];
-    if ( iS.Vnd ~= "" )                                 % If a vendor is specified, show it
-        txt = [ txt ' (for ' char(iS.Vnd) ')' ]     ;
+    txt = [ char(startStr) ' at ' iC.P.B0tag ', TR_{eff} = ' num2str(iC.S.TRef) ' ms' ];
+    if ( iC.S.Vnd ~= "" )                               % If a vendor is specified, show it
+        txt = [ txt ' (for ' char(iC.S.Vnd) ')' ]   ;
     end % if
     title(  txt              , 'FontSize' , 16 )    ;
 end % fcn
@@ -578,7 +574,7 @@ function figTextBox( fStr, fVar )
 end % fcn
 
 % function saveFigAsImg()
-%     imgName = ['TReff_' int2str(iS.TRef) '_TI1_' int2str(iT.Ti1n) '_TI2_'  int2str(iT.Ti2n) ];
+%     imgName = ['TReff_' int2str(iC.S.TRef) '_TI1_' int2str(iC.T.Ti1n) '_TI2_'  int2str(iC.T.Ti2n) ];
 %     if exist('Figures','dir')~=7, mkdir('Figures'), end
 %     cd Figures
 %     % TODO: What's the difference between print to image and the imwrite command?
@@ -589,7 +585,7 @@ end % fcn
 %% USER INTERFACE
 
 function IR_CreateUI()                                  % Display a button to show/hide the UI controls
-%     uiX = 74.0*fSz; uiY = 50.0*fSz              ;       % Default start position (in px) for masterUI controls
+%     uiX = 74.0*fSz; uiY = 50.0*fSz            ;       % Default start position (in px) for masterUI controls
     eW = 0.065 ; eH = 0.065; eS = eH + 0.025    ;       % Button width/height/spc for masterUI controls (was [50 40 60] px)
     myAx = gca                                  ;       % A handle to the current graphics axes (plot)
     uiX = myAx.OuterPosition(3) - 0.015 - eW    ;       % Use the axis' outer x position (def. [ 0 0 1 1 ]) for UI pos.
@@ -603,7 +599,7 @@ function IR_CreateUI()                                  % Display a button to sh
         'Position'  , [ uiX uiY-4*eS eW eH ]    ,   ...
         'Callback'  , @masterUI_callback        )   ;   % UI to show/hide the UI control panel
     
-    switch iPr.Mode
+    switch iC.P.Mode
         case 1                                          % 1IR T1 nulling
             b2txt = 'DIR'                           ;
             b4txt = ''                              ;
@@ -613,8 +609,8 @@ function IR_CreateUI()                                  % Display a button to sh
         case 3                                          % T1W nulling
             b2txt = ''                              ;
             b4txt = 'Back'                          ;
-    end % switch iPr.Mode
-    if ismember( iPr.Mode, [ 1 2 ] )                    % If 1IR/DIR:
+    end % switch iC.P.Mode
+    if ismember( iC.P.Mode, [ 1 2 ] )                    % If 1IR/DIR:
         cPar = [ 2 1 0 ]                            ;   % Switch to this mode from mode 1-3
         uicontrol( 'Style'  , 'pushbutton'      ,   ... % uiMode
         'ToolTipString' , '[w] Switch mode'     ,   ...
@@ -633,7 +629,7 @@ function IR_CreateUI()                                  % Display a button to sh
         'Callback'  , @plotT2_callback          )   ;   % UI to create T2 vs TE plot
     end % if
     
-    if ismember( iPr.Mode, [ 2 3 ] )                    % If DIR/T1W_n:
+    if ismember( iC.P.Mode, [ 2 3 ] )                    % If DIR/T1W_n:
         cPar = [ 0 3 2 ]                            ;   % Switch to this mode from mode 1-3
         uicontrol( 'Style'  , 'pushbutton'      ,   ...
         'ToolTipString' , '[t] Switch mode'     ,   ...
@@ -644,20 +640,20 @@ function IR_CreateUI()                                  % Display a button to sh
         'Callback'  , {@cMode_callback,cPar}    )   ;   % UI to change run mode to T1W nulling plot
     end % if
     
-    iUI.Vnd = uicontrol( 'Style', 'pushbutton'  ,   ... % ui Vnd
+    UI1.Vnd = uicontrol( 'Style', 'pushbutton'  ,   ... % ui Vnd
         'ToolTipString' , '[v] Select vendor'   ,   ...
         'String'        , 'Vendor'              ,   ...
         'FontWeight'    , 'bold'                ,   ...
         'Units'         , 'normalized'          ,   ...
         'Position'  , [ uiX uiY-5*eS eW eH ]    ,   ...
         'Callback'  , @vendor_callback          )   ;   % UI to select vendor implementation
-%     if ( iS.Vnd == "" )
-        iUI.Vnd.String = "Vendor"                   ;
+%     if ( iC.S.Vnd == "" )
+        UI1.Vnd.String = "Vendor"                   ;
 %     else
-%         iUI.Vnd.String = iS.Vnd                     ;
+%         UI1.Vnd.String = iC.S.Vnd                 ;
 %     end % if
     
-    iUI.Stp = uicontrol( 'Style', 'pushbutton'  ,   ... % ui Stp
+    UI1.Stp = uicontrol( 'Style', 'pushbutton'  ,   ... % ui Stp
         'ToolTipString' , '[c/d] TR ±1 s'       ,   ...
         'String'        , 'Step TR'             ,   ...
         'FontWeight'    , 'bold'                ,   ...
@@ -666,25 +662,25 @@ function IR_CreateUI()                                  % Display a button to sh
         'Callback'  , {@steptr_callback,1000}   )   ;   % UI to debug by increasing TR in steps
 
     createUIPanel()                                 ;
-    switch iUI.Show
-        case true ; iUIBox.Visible = 'on'           ;
-        case false; iUIBox.Visible = 'off'          ;
-    end % switch iUI.Show
+    switch UI1.Show
+        case true ; F1_Pan.Visible = 'on'           ;
+        case false; F1_Pan.Visible = 'off'          ;
+    end % switch UI1.Show
 end % IR_CreateUI
 
 function createUIPanel()
     % Make UI control buttons for saving images instead of the variable, like with printVars?
     %      Probably not necessary, since you can save the image from the File menu.
     
-    boxClr = iPr.FigClr                             ;   % UI panel background color (same as fig background)
-%     uiX = 58.3*fSz; uiY = 54.5*fSz                  ;   % Default start position (in px) for UI controls
+    boxClr = iC.P.FigClr                            ;   % UI panel background color (same as fig background)
+%     uiX = 58.3*fSz; uiY = 54.5*fSz                ;   % Default start position (in px) for UI controls
     eN = 11; eW = 130; eH = 30                      ;   % Num. of UI elements; default element width/height (were 120/30)
     mX = 10; mY =  6                                ;   % x/y margins in UI panel
     eW2 = eW/2 - 3; mX2 = mX + eW/2 + 3             ;   % Width/position of half-width elements
-    iUI.Hpx = eN*eH + 2*mY; uiT = iUI.Hpx - mY + 3  ;   % UI panel height in pixels; top position for elements
-    iUI.Wpx = eW + 2*mX                             ;   % UI panel width in pixels
+    UI1.Hpx = eN*eH + 2*mY; uiT = UI1.Hpx - mY + 3  ;   % UI panel height in pixels; top position for elements
+    UI1.Wpx = eW + 2*mX                             ;   % UI panel width in pixels
     
-    iUIBox = uipanel( iPr.Fig1                  ,   ... % iUIBox
+    F1_Pan = uipanel( iC.P.Fig1                 ,   ... % F1_Pan
         'BackgroundColor'   , boxClr            ,   ... %  [ 0.8 0.8 0.4 ]
         'BorderType'        , 'etchedin'        ,   ... % default 'etchedin'
         'BorderWidth'       , 1.0               ,   ... % default 1
@@ -695,19 +691,19 @@ function createUIPanel()
 %         'Title'             , 'Controls'        ,   ... % If specifying a title, it'll show up on the panel
 %         'FontSize'          , 10                ,   ...
 %         'Position'  , [ uiX uiY-uiH uiW uiH ]   ,   ... % UI panel container for the controls (pixel units)
-%     uistack( iUIBox, 'top' )                        ;   % Bring the panel to the top of the graphic stack (not necessary)
+%     uistack( F1_Pan, 'top' )                        ;   % Bring the panel to the top of the graphic stack (not necessary)
     placeUiBox()                                    ;   % Adjust the UI panel position to the figure window
     
     for i = 1:eN; eY = uiT - i*eH                   ;   % Generate each UI element on a new row in the panel
     switch i
     case  1
-        uicontrol( 'Parent' , iUIBox            ,   ... % ui pT1s
+        uicontrol( 'Parent' , F1_Pan            ,   ... % ui pT1s
             'Style'         , 'pushbutton'      ,   ...
             'ToolTipString' , '[f] Print info'  ,   ... % 'Print T1 times'
             'String'        , 'Info'            ,   ...
             'Position'  , [ mX eY+0 eW2 24 ]    ,   ...
             'Callback'  , @printInfo_callback   )   ;   % UI to print settings to the command window
-        uicontrol( 'Parent' , iUIBox            ,   ...
+        uicontrol( 'Parent' , F1_Pan            ,   ...
             'Style'         , 'pushbutton'      ,   ...
             'String'        , 'Results'         ,   ...
             'ToolTipString' ,'[p] Print results',   ...
@@ -717,17 +713,17 @@ function createUIPanel()
     case 2
         uiStr = 'T1s:'                              ;
         ttStr = 'Ref. values for T1s'               ;
-        iUI.B0T = uicontrol( 'Parent', iUIBox   ,   ... % ui B0[T|S]
+        UI1.B0T = uicontrol( 'Parent', F1_Pan   ,   ... % ui B0[T|S]
             'Style'         , 'text'            ,   ...
             'ToolTipString' , ttStr             ,   ...
             'String'        , uiStr             ,   ...
             'BackgroundColor', boxClr           ,   ...
             'HorizontalAlignment', 'Left'       ,   ...
             'Position'      , [ mX eY+2 eW 16 ] )   ; 
-        iUI.B0S = uicontrol( 'Parent', iUIBox   ,   ...
+        UI1.B0S = uicontrol( 'Parent', F1_Pan   ,   ...
             'Style'         , 'popup'           ,   ...
-            'String'        , iPr.B0str         ,   ...
-            'Value'         , iPr.B0sel         ,   ...
+            'String'        , iC.P.B0str        ,   ...
+            'Value'         , iC.P.B0sel        ,   ...
             'Position'  ,[ mX+24 eY+0 eW-34 23 ],   ... % Note: Height setting won't change the actual height here
             'Callback'  , @b0_sel_callback      )   ;   % UI to set relaxation times based on B0 and ref.
         
@@ -735,17 +731,17 @@ function createUIPanel()
         uiStr = 'TR:                          ms'   ;
         ttStr = '[u] Repetition time'               ;
         t2Str = 'TR = TR_ef + T_Ro + T_T2p'         ;
-        uicontrol( 'Parent' , iUIBox            ,   ... % ui TR[T|S]
+        uicontrol( 'Parent' , F1_Pan            ,   ... % ui TR[T|S]
             'Style'         , 'text'            ,   ...
             'ToolTipString' , ttStr             ,   ...
             'String'        , uiStr             ,   ...
             'BackgroundColor', boxClr           ,   ...
             'HorizontalAlignment', 'Left'       ,   ...
             'Position'  , [ mX eY+1 eW 16 ]     )   ;
-        iUI.TRS = uicontrol( 'Parent', iUIBox   ,   ...
+        UI1.TRS = uicontrol( 'Parent', F1_Pan   ,   ...
             'Style'         , 'edit'            ,   ...
-            'String'        , iS.TR             ,   ...
-            'Value'         , iS.TR             ,   ...
+            'String'        , iC.S.TR           ,   ...
+            'Value'         , iC.S.TR           ,   ...
             'Min' , 11      , 'Max' , 11        ,   ... % Tip: Max > Min allows multiline edit
             'ToolTipString' , t2Str             ,   ...
             'Position'  , [ mX+40 eY+0 50 20 ]  ,   ...
@@ -755,18 +751,18 @@ function createUIPanel()
         uiStr = 'T_Ro:                      ms'     ;
         ttStr = 'TSE Readout time'                  ;
         t2Str = 'ETD = ETL * ES'                    ;
-        uicontrol( 'Parent' , iUIBox            ,   ... % ui TRo[T|S]
+        uicontrol( 'Parent' , F1_Pan            ,   ... % ui TRo[T|S]
             'Style'         , 'text'            ,   ...
             'ToolTipString' , ttStr             ,   ...
             'String'        , uiStr             ,   ...
             'BackgroundColor', boxClr           ,   ...
             'HorizontalAlignment', 'Left'       ,   ...
             'Position'  , [ mX eY+1 eW 16 ]     )   ;
-        uicontrol( 'Parent' , iUIBox            ,   ...
+        uicontrol( 'Parent' , F1_Pan            ,   ...
             'Style'         , 'edit'            ,   ...
             'ToolTipString' , t2Str             ,   ...
-            'String'        , iS.ETD            ,   ...
-            'Value'         , iS.ETD            ,   ...
+            'String'        , iC.S.ETD          ,   ...
+            'Value'         , iC.S.ETD          ,   ...
             'Min' , 11      , 'Max' , 11        ,   ...
             'Position'  , [ mX+40 eY+0 50 20 ]  ,   ...
             'Callback'  , @tro_set_callback     )   ;   % UI to set T_Read
@@ -775,36 +771,36 @@ function createUIPanel()
         uiStr = 'Inv.eff.:                   %'     ;
         ttStr = 'Inversion efficiency'              ;
         t2Str = 'IEf = -cos(FA_inv)'                ;
-        uicontrol( 'Parent' , iUIBox            ,   ... % ui IEf[T|S]
+        uicontrol( 'Parent' , F1_Pan            ,   ... % ui IEf[T|S]
             'Style'         , 'text'            ,   ...
             'ToolTipString' , ttStr             ,   ...
             'String'        , uiStr             ,   ...
             'BackgroundColor', boxClr           ,   ...
             'HorizontalAlignment', 'Left'       ,   ...
             'Position'  , [ mX eY+2 eW 16 ]     )   ;
-        uicontrol( 'Parent' , iUIBox            ,   ...
+        uicontrol( 'Parent' , F1_Pan            ,   ...
             'Style'         , 'edit'            ,   ...
             'ToolTipString' , t2Str             ,   ...
-            'String'        , iS.IEf            ,   ...
-            'Value'         , iS.IEf            ,   ...
+            'String'        , iC.S.IEf          ,   ...
+            'Value'         , iC.S.IEf          ,   ...
             'Position'  , [ mX+40 eY+0 50 20 ]  ,   ...
             'Callback'  , @ie_set_callback      )   ;   % UI to set inversion efficiency
 
     case  6
         uiStr = 'T_Inv.:                     ms'    ;
         ttStr = 'Inv. pulse dur.'                   ;
-        uicontrol( 'Parent' , iUIBox            ,   ... % ui IPD[T|S]
+        uicontrol( 'Parent' , F1_Pan            ,   ... % ui IPD[T|S]
             'Style'         , 'text'            ,   ...
             'ToolTipString' , ttStr             ,   ...
             'String'        , uiStr             ,   ...
             'BackgroundColor', boxClr           ,   ...
             'HorizontalAlignment', 'Left'       ,   ...
             'Position'  , [ mX eY+1 eW 16 ]     )   ;
-        uicontrol( 'Parent' , iUIBox            ,   ...
+        uicontrol( 'Parent' , F1_Pan            ,   ...
             'Style'         , 'edit'            ,   ...
             'ToolTipString' , ttStr             ,   ...
-            'String'        , iS.IPD            ,   ...
-            'Value'         , iS.IPD            ,   ...
+            'String'        , iC.S.IPD          ,   ...
+            'Value'         , iC.S.IPD          ,   ...
             'Min' , 11      , 'Max' , 11        ,   ...
             'Position'  , [ mX+40 eY+0 50 20 ]  ,   ...
             'Callback'  , @ipd_set_callback     )   ;   % UI to set inversion pulse duration
@@ -814,7 +810,7 @@ function createUIPanel()
         ttStr = 'T2 preparation'                    ;
         t2Str = 'E2p = exp(-T2p/T2)'                ;
         t3Str = '[2] T2 prep. On/Off'               ;
-        iUI.T2pT = uicontrol( 'Parent', iUIBox  ,   ... % ui T2p[T|S]
+        UI1.T2pT = uicontrol( 'Parent', F1_Pan  ,   ... % ui T2p[T|S]
             'Style'         , 'text'            ,   ...
             'ToolTipString' , ttStr             ,   ...
             'String'        , uiStr             ,   ...
@@ -823,62 +819,62 @@ function createUIPanel()
             'Position'  , [ mX eY+1 eW 16 ]     )   ;
 %             'Enable'        ,        'Inactive' ,   ... % TODO: Make the text clickable, reflecting state?
 %             'ButtonDownFcn','toggleT2prep( -1 )')   ;   % Problem: Fcn will be run in main data space so no local fns.
-        iUI.T2pS = uicontrol( 'Parent', iUIBox  ,   ...
+        UI1.T2pS = uicontrol( 'Parent', F1_Pan  ,   ...
             'Style'         , 'edit'            ,   ...
             'ToolTipString' , t2Str             ,   ...
-            'String'        , iS.T2p            ,   ...
-            'Value'         , iS.T2p            ,   ...
+            'String'        , iC.S.T2p          ,   ...
+            'Value'         , iC.S.T2p          ,   ...
             'Min' , 11      , 'Max' , 11        ,   ...
             'Position'  , [ mX+40 eY+0 50 20 ]  ,   ...
             'Callback'  , @t2p_set_callback     )   ;   % UI to set T2prep duration (in ms)
-%         iUI.T2pS.ForegroundColor  = iPr.Gray        ;   % Gray out the T2prep text for now since it's WIP
-        iUI.T2pB = uicontrol( 'Parent', iUIBox  ,   ... % ui T2p[T|S]
+%         UI1.T2pS.ForegroundColor  = iC.P.Gray       ;   % Gray out the T2prep text for now since it's WIP
+        UI1.T2pB = uicontrol( 'Parent', F1_Pan  ,   ... % ui T2p[T|S]
             'Style'         , 'radio'           ,   ...
             'ToolTipString' , t3Str             ,   ...
             'Position'  , [ mX+23 eY+3 14 14 ]  ,   ...
             'Callback'  , @t2p_toggle_callback  )   ;   % UI to set T2prep duration (in ms)
-        if ( iS.T2pOn )
-            iUI.T2pS.Enable = 'on'                  ;
-            iUI.T2pB.Value  = 1                     ;
+        if ( iC.S.T2pOn )
+            UI1.T2pS.Enable = 'on'                  ;
+            UI1.T2pB.Value  = 1                     ;
         else
-            iUI.T2pS.Enable = 'off'                 ;
-            iUI.T2pB.Value  = 0                     ;
+            UI1.T2pS.Enable = 'off'                 ;
+            UI1.T2pB.Value  = 0                     ;
         end % if
 
     case  8
         uiStr = 'T1_n1:                    ms'      ;   % Note: UIControl text can't support Tex/LaTeX
         ttStr = 'Longer T1 to null'                 ;
-        iUI.Tn1T = uicontrol( 'Parent', iUIBox  ,   ... % ui Tn1[T|S]
+        UI1.Tn1T = uicontrol( 'Parent', F1_Pan  ,   ... % ui Tn1[T|S]
             'Style'         , 'text'            ,   ...
             'ToolTipString' , ttStr             ,   ...
             'String'        , uiStr             ,   ...
             'BackgroundColor', boxClr           ,   ...
             'HorizontalAlignment', 'Left'       ,   ...
             'Position'  , [ mX eY+1 eW 16 ]     )   ;
-        uicontrol( 'Parent' , iUIBox            ,   ...
+        uicontrol( 'Parent' , F1_Pan            ,   ...
             'Style'         , 'edit'            ,   ...
             'Min' , 11      , 'Max' , 11        ,   ...
-            'String'        , iT.Tn1            ,   ...
-            'Value'         , iT.Tn1            ,   ...
+            'String'        , iC.T.Tn1          ,   ...
+            'Value'         , iC.T.Tn1          ,   ...
             'Position'  , [ mX+40 eY+0 50 20 ]  ,   ...
             'Callback'  , @t1n1_set_callback    )   ;   % UI to set Tn1 (longer T1, typically CSF)
 
     case  9
-        if ismember( iPr.Mode , [ 2 3 ] )               % DIR T1 nulling and T1-DIR null two T1
+        if ismember( iC.P.Mode , [ 2 3 ] )               % DIR T1 nulling and T1-DIR null two T1
             uiStr = 'T1_n2:                    ms'  ;
             ttStr = 'Shorter T1 to null'            ;
-        iUI.Tn2T = uicontrol( 'Parent', iUIBox  ,   ... % ui Tn2[T|S]
+        UI1.Tn2T = uicontrol( 'Parent', F1_Pan  ,   ... % ui Tn2[T|S]
             'Style'         , 'text'            ,   ...
             'ToolTipString' , ttStr             ,   ...
             'String'        , uiStr             ,   ...
             'BackgroundColor', boxClr           ,   ...
             'HorizontalAlignment', 'Left'       ,   ...
             'Position'  , [ mX eY+1 eW 16 ]     )   ;
-        iUI.Tn2S = uicontrol( 'Parent', iUIBox  ,   ...
+        UI1.Tn2S = uicontrol( 'Parent', F1_Pan  ,   ...
             'Style'         , 'edit'            ,   ...
             'Min' , 11      , 'Max' , 11        ,   ...
-            'String'        , iT.Tn2            ,   ...
-            'Value'         , iT.Tn2            ,   ...
+            'String'        , iC.T.Tn2          ,   ...
+            'Value'         , iC.T.Tn2          ,   ...
             'Position'  , [ mX+40 eY+0 50 20 ]  ,   ...
             'Callback'  , @t1n2_set_callback    )   ;   % UI to set Tn2 (shorter T1; GM/WM/etc)
         end % if
@@ -886,34 +882,34 @@ function createUIPanel()
     case 10
         uiStr = 'Null T1:'                          ;
         ttStr = 'Ref. tissue to null'               ;
-        iUI.STnT = uicontrol( 'Parent', iUIBox  ,   ... % ui STn[T|S]
+        UI1.STnT = uicontrol( 'Parent', F1_Pan  ,   ... % ui STn[T|S]
             'Style'         , 'text'            ,   ...
             'ToolTipString' , ttStr             ,   ...
             'String'        , uiStr             ,   ...
             'BackgroundColor', boxClr           ,   ...
             'HorizontalAlignment',  'Left'      ,   ...
             'Position'  , [ mX eY+1 eW 16 ]     )   ;
-        if ismember( iPr.Mode, [ 1 2 ] )                % 1IR and DIR T1 nulling use tissue selector
-        iUI.STnS = uicontrol( 'Parent', iUIBox  ,   ...
+        if ismember( iC.P.Mode, [ 1 2 ] )                % 1IR and DIR T1 nulling use tissue selector
+        UI1.STnS = uicontrol( 'Parent', F1_Pan  ,   ...
             'Style'         , 'popup'           ,   ...
-            'String'        , Ts.Tag(2,:)       ,   ...
-            'Value'         , iPr.TsSel         ,   ...
+            'String'        , iC.M.Tag(2,:)     ,   ...
+            'Value'         , iC.P.TsSel        ,   ...
             'Position'  ,[ mX+40 eY+0 eW-50 22 ],   ...
             'Callback'  , @t1_sel_callback      )   ;   % UI to set T1_n(2) by tissue
-        if iT.T1z ~= Ts.T(1,iPr.TsSel)
-            iUI.STnS.ForegroundColor  = iPr.Gray    ;   % Gray out the tissue selector if entering values manually
-        end % if iT.T1z
-        else % ismember iPr.Mode
-            iUI.STnT.String = 'Rel. S0:                     %';
-            if ~isfield(iS,'oldS'); iS.oldS = iS.newS; end % if     % For use in the relSNR uicontrol box
-            if ~isfield(iS,'oldB'); iS.oldB = iS.B0  ; end % if     % (w/ normal global var., was if isempty)
-            relS0 = uint16(100*(iS.newS/iS.oldS)*(iS.B0/iS.oldB));  % Rel.S0 is prop. to CNR, and rel.SNR here
+        if iC.T.T1z ~= iC.M.T(1,iC.P.TsSel)
+            UI1.STnS.ForegroundColor  = iC.P.Gray   ;   % Gray out the tissue selector if entering values manually
+        end % if iC.T.T1z
+        else % ismember iC.P.Mode
+            UI1.STnT.String = 'Rel. S0:                     %' ;
+            if ~isfield(iC.S,'oldS'); iC.S.oldS = iC.S.newS; end % if       % For use in the relSNR uicontrol box
+            if ~isfield(iC.S,'oldB'); iC.S.oldB = iC.S.B0  ; end % if       % (w/ normal global var., was if isempty)
+            relS0 = uint16(100*(iC.S.newS/iC.S.oldS)*(iC.S.B0/iC.S.oldB));  % Rel.S0 is prop. to CNR, and rel.SNR here
             if ( debugInfo )
-                fprintf("   "); fprintf("%-10s", ["new S0L","old S0L","ratio","(rel. units)"] ); fprintf("\n");
-                disp( [ iS.newS, iS.oldS, iS.newS/iS.oldS ] )
+                fprintf("   "); fprintf("%-10s", ["new S0L","old S0L","ratio","(rel. units)"] ); fprintf("\n") ;
+                disp( [ iC.S.newS, iC.S.oldS, iC.S.newS/iC.S.oldS ] )
             end % if debug
-            iS.oldS = iS.newS;
-        uicontrol( 'Parent' , iUIBox            ,   ... % Text box to show rel. S0 (instead of tissue selector)
+            iC.S.oldS = iC.S.newS                   ;
+        uicontrol( 'Parent' , F1_Pan            ,   ... % Text box to show rel. S0 (instead of tissue selector)
             'Style'         , 'edit'            ,   ...
             'String'        , relS0             ,   ...
             'Min' , 11      , 'Max' , 11        ,   ...
@@ -925,23 +921,23 @@ function createUIPanel()
         uiStr = 'Res.S:                 %'          ;
         ttStr = 'Residual signal'                   ;
         t2Str = 'May improve CNR?'                  ;
-        uicontrol( 'Parent' , iUIBox            ,   ... % ui RS[T|S]
+        uicontrol( 'Parent' , F1_Pan            ,   ... % ui RS[T|S]
             'Style'         , 'text'            ,   ...
             'ToolTipString' , ttStr             ,   ...
             'String'        , uiStr             ,   ...
             'BackgroundColor', boxClr           ,   ...
             'HorizontalAlignment', 'Left'       ,   ...
             'Position'  , [ mX eY+2 eW 16 ]     )   ;
-        uicontrol( 'Parent' , iUIBox            ,   ...
+        uicontrol( 'Parent' , F1_Pan            ,   ...
             'Style'         , 'edit'            ,   ...
             'ToolTipString' , t2Str             ,   ...
-            'String'        , 100*iR.RCS        ,   ...
-            'Value'         , 100*iR.RCS        ,   ...
+            'String'        , 100*iC.P.RCS      ,   ...
+            'Value'         , 100*iC.P.RCS      ,   ...
             'Position'  , [ mX+40 eY+0 40 20 ]  ,   ...
             'Callback'  , @rs_set_callback      )   ;   % UI to set desired residual CSF signal
 
 %     case  11
-%         uicontrol( 'Parent' , iUIBox            ,   ... % ui FAex[T|S]
+%         uicontrol( 'Parent' , F1_Pan            ,   ... % ui FAex[T|S]
 %             'Style'         , 'text'            ,   ...
 %             'ToolTipString','Excitation pulse FA',  ...
 %             'BackgroundColor', boxClr           ,   ...
@@ -949,10 +945,10 @@ function createUIPanel()
 %             'Visible'       , 'off'             ,   ... % Disable this for now (not needed)
 %             'Position'  , [ mX eY+1 eW 16 ]     ,   ...
 %             'String','FAex:                         °');
-%         iUI.FAexS = uicontrol( 'Parent', iUIBox ,   ...
+%         UI1.FAexS = uicontrol( 'Parent', F1_Pan ,   ...
 %             'Style'         , 'edit'            ,   ...
-%             'String'        , iS.FAx            ,   ...
-%             'Value'         , iS.FAx            ,   ...
+%             'String'        , iC.S.FAx          ,   ...
+%             'Value'         , iC.S.FAx          ,   ...
 %             'Min' , 11      , 'Max' , 11        ,   ... % Tip: Max > Min allows multiline edit
 %             'Visible'       , 'off'             ,   ... % Disable this for now (not needed)
 %             'Position'  , [ mX+40 eY+0 60 20 ]  ,   ...
@@ -961,17 +957,17 @@ function createUIPanel()
 
 % TODO: Make a button to show a list box for selecting what to plot, in a separate GUI panel?
 %     case 11
-%         iUI.ShTT = uicontrol( 'Parent', iUIBox  ,  ... % ui ShT[T|S]
+%         UI1.ShTT = uicontrol( 'Parent', F1_Pan  ,  ... % ui ShT[T|S]
 %             'Style'         , 'text'            ,   ...
 %             'ToolTipString' , 'Tissues to show' ,   ...
 %             'String'        , 'Showing'         ,   ...  
 %             'BackgroundColor', boxClr           ,   ...
 %             'HorizontalAlignment', 'Left'       ,   ...
 %             'Position'  , [ mX eY+1 eW 16 ]     )   ;
-%         iUI.ShTS = uicontrol( 'Parent', iUIBox  ,   ...
+%         UI1.ShTS = uicontrol( 'Parent', F1_Pan  ,   ...
 %             'Style'         , 'listbox'         ,   ...
-%             'String'        , Ts.Tag(1,:)       ,   ...
-%             'Value'         , Ts.Leg            ,   ...
+%             'String'        , iC.M.Tag(1,:)     ,   ...
+%             'Value'         , iC.M.Leg          ,   ...
 %             'Min' , 00      , 'Max' , 11        ,   ... % Tip: Max > Min allows multiple listbox selection
 %             'Position', [ mX+40 eY-60 eW-40 82 ],   ...
 %             'Callback'  , @t_disp_callback      )   ;   % UI to set which tissues to display/calculate
@@ -979,19 +975,19 @@ function createUIPanel()
     end % switch i
     end % for i
     
-    switch iPr.Mode
+    switch iC.P.Mode
         case 1                                          % 1IR T1 nulling
-        iUI.Tn1T.String  = 'T1_n:                      ms'  ;   % There is only one T1 to null in 1IR
-        iUI.STnT.Position = iUI.STnT.Position + [ 0 eH 0 0 ];   % Move the tissue selector one line up
-        iUI.STnS.Position = iUI.STnS.Position + [ 0 eH 0 0 ];   % --"--
-%         iUI.Tn2S.Visible = 'off'                    ;   % Hide the tissue 2 edit text/box (ui###T/S, if created)
+        UI1.Tn1T.String  = 'T1_n:                      ms'  ;   % There is only one T1 to null in 1IR
+        UI1.STnT.Position = UI1.STnT.Position + [ 0 eH 0 0 ] ;  % Move the tissue selector one line up
+        UI1.STnS.Position = UI1.STnS.Position + [ 0 eH 0 0 ] ;  % --"--
+%       UI1.Tn2S.Visible = 'off'                    ;   % Hide the tissue 2 edit text/box (ui###T/S, if created)
         case 2                                          % DIR T1 nulling
-%         iUI.B0S.ForegroundColor = iPr.Gray;             % Gray out the B0 select text/box (ui###T/S, if created)
+%       UI1.B0S.ForegroundColor = iC.P.Gray         ;   % Gray out the B0 select text/box (ui###T/S, if created)
         case 3                                          % T1W nulling
-        iUI.Tn2S.Enable           = 'inactive'      ;   % The tissue 2 selector is not editable
-        iUI.Tn2S.ForegroundColor  = iPr.Gray        ;   % Gray out the tissue 2 edit text (it's set automatically)
-%         iUI.FAexS.Enable          = 'off'           ;   % Gray out the FA edit box (FA is irrelevant in this mode)
-    end % switch iPr.Mode
+        UI1.Tn2S.Enable           = 'inactive'      ;   % The tissue 2 selector is not editable
+        UI1.Tn2S.ForegroundColor  = iC.P.Gray       ;   % Gray out the tissue 2 edit text (it's set automatically)
+%       UI1.FAexS.Enable          = 'off'           ;   % Gray out the FA edit box (FA is irrelevant in this mode)
+    end % switch iC.P.Mode
 
 end % createUIPanel
 
@@ -1003,15 +999,15 @@ function val = str2val( str )                           % Function to process nu
 end % fcn
 
 function masterUI_callback(~,~)                         % UI that shows/hides the UI control panel
-    iUI.Show = ~iUI.Show                            ;
-    switch iUI.Show
-        case true ; iUIBox.Visible = 'on'           ;
-        case false; iUIBox.Visible = 'off'          ;
+    UI1.Show = ~UI1.Show                            ;
+    switch UI1.Show
+        case true ; F1_Pan.Visible = 'on'           ;
+        case false; F1_Pan.Visible = 'off'          ;
     end
 end % fcn
 
 function cMode_callback(~,~,toMode)                     % Switch between calculation modes
-    switch iPr.Mode
+    switch iC.P.Mode
         case 1                                          % 1IR T1 nulling    ->|
             SetMode( toMode(1) )                    ;
         case 2                                          % DIR T1 nulling    |<-
@@ -1023,35 +1019,34 @@ function cMode_callback(~,~,toMode)                     % Switch between calcula
 end % fcn
 
 function vendor_callback(~,~)                           % Switch between vendor implementations
-    switch iS.Vnd
+    switch iC.S.Vnd
         case ""
-            iS.Vnd = "GE"                           ;   % -> GE
-            iS.T2pOld = iS.T2p                      ;   % Store the current T2 prep time
-            iS.T2p = 200.0                          ;   % GE uses this value consistently
+            iC.S.Vnd = "GE"                         ;   % -> GE
+            iC.S.T2pOld = iC.S.T2p                  ;   % Store the current T2 prep time
+            iC.S.T2p = 200.0                        ;   % GE uses this value consistently
         case "GE"
-            iS.Vnd = "Siemens"                      ;   % -> Sie
-            iS.T2p = 170.0                          ;   % Sie uses this value consistently
+            iC.S.Vnd = "Siemens"                    ;   % -> Sie
+            iC.S.T2p = 170.0                        ;   % Sie uses this value consistently
 %             if FLAIR, use T2P, if DIR turn it off by def.? Sie doesn't yet provide T2P w/ DIR.
         case "Siemens"
-            iS.Vnd = "Philips"                      ;   % -> Phi
-            iS.T2p = 125.0                          ;   % Phi uses this value as default
+            iC.S.Vnd = "Philips"                    ;   % -> Phi
+            iC.S.T2p = 125.0                        ;   % Phi uses this value as default
         case "Philips"
-            iS.Vnd = ""                             ;   % <<-
-            iS.T2p = iS.T2pOld                      ;   % Retrieve the previous T2 prep time
+            iC.S.Vnd = ""                           ;   % <<-
+            iC.S.T2p = iC.S.T2pOld                  ;   % Retrieve the previous T2 prep time
     end % switch                                        % Note that the figure title shows the active vendor
-    SetRelaxTimes( iPr.B0sel )                          % Vendor implementation and mode may affect relaxation time settings
+    SetRelaxTimes( iC.P.B0sel )                         % Vendor implementation and mode may affect relaxation time settings
     main();
 end % fcn
 
 function plotT2_callback(~,~)                           % Run T2 plot (in separate script)
     iT2s        =   struct(                         ...
-        'Fig1'  ,   iPr.Fig1                    ,   ...
-        'S0'    ,   iR.S0(1:4)                  ,   ...
-        'T2'    ,   Ts.T(2,:)                   ,   ...
-        'TsTag' ,   Ts.Tag(1,1:4)               ,   ...
+        'Fig1'  ,   iC.P.Fig1                   ,   ...
+        'S0'    ,   iC.R.S0(1:4)                ,   ... % S0
+        'T2'    ,   iC.M.T(2,:)                 ,   ... % T2
+        'TsTag' ,   iC.M.Tag(1,1:4)             ,   ... % Tags
         'T2tis' ,   [ 4 1 2 ]                   )   ;   % Tissues to T2 plot: WML, WM, GM
-    iPr.Fig2 = IR_T2_Subplot( iT2s, iS );
-    % iR.S0(1:4), Ts.T(2,:), Ts.Tag(1,1:4), [ 4 1 2 ], iS )    % S0/T2/tags for a set of tissues to plot
+    IR_T2_SigPlot( iT2s )                           ;
 end % fcn
 
 function b0_sel_callback(src,~)                         % UI to set rel. times based on B0/ref.
@@ -1060,97 +1055,97 @@ function b0_sel_callback(src,~)                         % UI to set rel. times b
 end % fcn
 
 function tr_set_callback(src,~)                         % UI to set TR
-    iS.TR = str2val( src.String )                   ;   % str2double( src.String );
-    Lim = iS.ETD + 5; if iS.TR < Lim, iS.TR = Lim; end  % TR > T_Read
+    iC.S.TR = str2val( src.String )                 ;   % str2double( src.String );
+    Lim = iC.S.ETD + 5; if iC.S.TR < Lim, iC.S.TR = Lim; end  % TR > T_Read
     main();
 end % fcn
 
 function steptr_callback(~,~,inc)                       % UI to step TR (DEBUG)
-    iS.TR = iS.TR + inc                             ;
+    iC.S.TR = iC.S.TR + inc                         ;
     main();
 end % fcn
 
 function tro_set_callback(src,~)                        % UI to set T_Read
-    iS.ETD = str2val( src.String )                  ;
-    Lim = iS.TR - 5; if iS.ETD > Lim, iS.ETD = Lim; end % TR > T_Read
+    iC.S.ETD = str2val( src.String )                ;
+    Lim = iC.S.TR - 5; if iC.S.ETD > Lim, iC.S.ETD = Lim; end % TR > T_Read
     main();
 end % fcn
 
 function ipd_set_callback(src,~)                        % UI to set Inv. pulse dur.
-    Lim = (iS.TRef + iS.IPD) - 1000                 ;
-    if ( iPr.Mode ~= 1 )
-        Lim = double( iT.Ti2n ) - 50                ;   % TODO: The second TI needs recalculation!
+    Lim = (iC.S.TRef + iC.S.IPD) - 1000             ;
+    if ( iC.P.Mode ~= 1 )
+        Lim = double( iC.T.Ti2n ) - 50              ;   % TODO: The second TI needs recalculation!
     end
-    iS.IPD = str2val( src.String )                  ;
-    if iS.IPD >= Lim, iS.IPD = Lim; end
-    if iS.IPD <  0  , iS.IPD = 0  ; end
+    iC.S.IPD = str2val( src.String )                ;
+    if iC.S.IPD >= Lim, iC.S.IPD = Lim; end
+    if iC.S.IPD <  0  , iC.S.IPD = 0  ; end
     main();
 end % fcn
 
 function t1n1_set_callback(src,~)                       % UI to set Tn1 (longer T1)
-    iT.Tn1 = str2val( src.String )                  ;
-    if iPr.Mode > 1                                     % Using multiple inversions...
-        Lim = iT.Tn2 + 1                            ;
-        if iT.Tn1 < Lim, iT.Tn1 = Lim; end              % Tn1 is the longest T1 time to null
+    iC.T.Tn1 = str2val( src.String )                ;
+    if iC.P.Mode > 1                                     % Using multiple inversions...
+        Lim = iC.T.Tn2 + 1                          ;
+        if iC.T.Tn1 < Lim, iC.T.Tn1 = Lim; end              % Tn1 is the longest T1 time to null
     end
-%     toggleT2prep( false )                           ;   % T2prep is incompatible with setting T1 manually (no known T2)
+%   toggleT2prep( false )                           ;   % T2prep is incompatible with setting T1 manually (no known T2)
     main();
 end % fcn
 
 function t1n2_set_callback(src,~)                       % UI to set Tn2 (shorter T1)
-    iT.Tn2 = str2val( src.String )                  ;
-    Lim = iT.Tn1 - 1                                ;
-    if iT.Tn2 > Lim, iT.Tn2 = Lim; end                  % Tn1 is the longest T1 time to null
-%     toggleT2prep( false )                           ;   % T2prep is incompatible with setting T1 manually (no known T2)
+    iC.T.Tn2 = str2val( src.String )                ;
+    Lim = iC.T.Tn1 - 1                              ;
+    if iC.T.Tn2 > Lim, iC.T.Tn2 = Lim; end              % Tn1 is the longest T1 time to null
+%   toggleT2prep( false )                           ;   % T2prep is incompatible with setting T1 manually (no known T2)
     main();
 end % fcn
 
 function t1_sel_callback(src,~)                         % UI to select a tissue T1 to null
-    SetT1n( iPr.Mode, src.Value )                   ;
-%     toggleT2prep( true )                            ;   % T2prep is compatible with tissue selection
+    SetT1n( iC.P.Mode, src.Value )                  ;
+%   toggleT2prep( true )                            ;   % T2prep is compatible with tissue selection
     main();
 end % fcn
 
 % function fa_set_callback(src,~)                         % UI to select the flip angle (in degrees)
-%     iS.FAx = str2val( src.String )                  ;
+%     iC.S.FAx = str2val( src.String )                ;
 %     main();
 % end % fcn
 
 function t2p_set_callback(src,~)                        % UI to select the T2 preparation time (in ms)
-    iS.T2p = str2val( src.String )                  ;
+    iC.S.T2p = str2val( src.String )                ;
     main();
 end % fcn
 
 function ie_set_callback(src,~)                         % UI to select the inversion efficiency (in percent)
-    iS.IEf = str2val( src.String )                  ;
-    if iS.IEf <= 0, iS.IEf = 1; end                     % Zero/negative Inv.Eff. crashes the program
+    iC.S.IEf = str2val( src.String )                ;
+    if iC.S.IEf <= 0, iC.S.IEf = 1; end                 % Zero/negative Inv.Eff. crashes the program
     main();
 end % fcn
 
 function rs_set_callback(src,~)                         % UI to select the desired residual CSF signal (in percent)
-    iR.RCS = str2val( src.String )/100              ;
+    iC.P.RCS = str2val( src.String )/100            ;
     Lim = 0.66                                      ;   % Too high residual signal crashes the program
-    if iR.RCS >  Lim, iR.RCS =  Lim; end
-    if iR.RCS < -Lim, iR.RCS = -Lim; end
+    if iC.P.RCS >  Lim, iC.P.RCS =  Lim ; end
+    if iC.P.RCS < -Lim, iC.P.RCS = -Lim ; end
     main();
 end % fcn
 
 function printVars_callback(~,~)                        % UI callback that prints results to the command window
-    fprintf( iPr.pStr, iPr.pVar )                   ;
-    if debugInfo && ismember( iPr.Mode, [ 1 2 ] )       % Debug info for plot
-%         len = length(iR.MzIt)                       ;
+    fprintf( iC.P.pStr, iC.P.pVar )                 ;
+    if debugInfo && ismember( iC.P.Mode, [ 1 2 ] )      % Debug info for plot
+%         len = length(iC.R.MzIt)                     ;
 %         fprintf('\nMagZ(TR) over the first %i repetitions (starting at 1):\n', len);
-%         disp( iR.MzIt )                             ;   % Show the iterative Z magnetization over the first TRs
-%         disp( iR.MzIt(:,2:its+1) )                  ;
+%         disp( iC.R.MzIt )                           ;   % Show the iterative Z magnetization over the first TRs
+%         disp( iC.R.MzIt(:,2:its+1) )                ;
         fStr = [ '\nMagZ and Signal(0) by T1 at'    ...
             ' readout with flip angle %3.1f°'       ...
             ' [S0=%1.2f*MagZ(TI)]:\n'           ]   ;
-        fprintf(fStr, round(iS.FAx,1,'significant'), sin(iS.FAx*pi/180));   % Heading
-        fprintf("\t "); fprintf("%-10s", Ts.Leg); fprintf("\n");            % Tissue legends
-        if ( iS.FAx == 90 )                             % Report resulting S0 iff angle less than 90°
-            fStr =             iR.S0'               ;
+        fprintf(fStr, round(iC.S.FAx,1,'significant'), sin(iC.S.FAx*pi/180)) ;  % Heading
+        fprintf("\t ") ; fprintf("%-10s", iC.M.Leg) ; fprintf("\n") ;       % Tissue legends
+        if ( iC.S.FAx == 90 )                             % Report resulting S0 iff angle less than 90°
+            fStr =                iC.R.S0'          ;
         else
-            fStr = [ iR.MzTI'; iR.S0' ]             ;
+            fStr = [ iC.R.MzTI' ; iC.R.S0' ]        ;
         end % if
         disp ( fStr )                               ;   % Mz/S (after FA° pulse) at readout
     end % if
@@ -1158,7 +1153,7 @@ end % fcn
 
 function printInfo_callback(~,~)                        % UI callback that prints settings to the command window
     fStr = [                               '\n'     ...
-            '*******************************\n'     ... % fprintf( fStr, iPr.B0str(iPr.B0sel), T1set );
+            '*******************************\n'     ... % fprintf( fStr, iC.P.B0str(iC.P.B0sel), T1set );
             '***    Relaxation times     ***\n'     ...
             '***    for %-15s',       '  ***\n'     ...
             '*******************************\n'     ... % [ T1_WM, T1_GM, T1_CSF, T1_MS, T1_Fat ]
@@ -1180,21 +1175,21 @@ function printInfo_callback(~,~)                        % UI callback that print
             '*  %-11s',   '     = %+4s %%   *\n'    ...
             '*  %-11s',   '     = %+4s ms  *\n'     ...
             '*******************************\n' ]   ; 
-    T1info = [ Ts.Tag(2,1:5); num2cell(Ts.T(1,1:5)) ]; % Use this trick to weave strings and numbers into a string array
-    T2info = [ Ts.Tag(2,1:5); num2cell(Ts.T(2,1:5)) ];
-    if ( iS.T2pOn )
-        T2prep = iS.T2p                             ;
+    T1info = [ iC.M.Tag(2,1:5); num2cell(iC.M.T(1,1:5)) ] ; % Use this trick to weave strings and numbers into a string array
+    T2info = [ iC.M.Tag(2,1:5); num2cell(iC.M.T(2,1:5)) ] ;
+    if ( iC.S.T2pOn )
+        T2prep = iC.S.T2p                           ;
     else
         T2prep = "--"                               ;
     end % if
-    T1pars = [  [  "TR    ", "T_Readout", "Inv.Eff.", "T_T2prep"];      ...
-        num2cell([  iS.TR  ,  iS.ETD    ,  iS.IEf   ,  T2prep   ]) ]    ;
-    fprintf( fStr, iPr.B0str(iPr.B0sel), T1info{:}, T2info{:}, T1pars{:} );
+    T1pars = [  [  "TR    ", "T_Readout", "Inv.Eff.", "T_T2prep"];          ...
+        num2cell([  iC.S.TR  ,  iC.S.ETD    ,  iC.S.IEf   ,  T2prep   ]) ]  ;
+    fprintf( fStr, iC.P.B0str(iC.P.B0sel), T1info{:}, T2info{:}, T1pars{:} );
 end % fcn
 
 function refresh_callback(~,~)                          % Refresh T1/T2 values
     fprintf( "<> IR-Calc T1/T2 refresh\n" )         ;
-    SetRelaxTimes( iPr.B0sel )                      ;
+    SetRelaxTimes( iC.P.B0sel )                     ;
     main();
 end % fcn
 
@@ -1213,14 +1208,14 @@ function keyPress_callback(~,evt)
         case 'c'                                        % Step TR (DEBUG)
             steptr_callback([],[],-1000)            ;
         case 't'                                        % TrueT2-DIR shortcut
-            switch iPr.Mode
+            switch iC.P.Mode
                 case 1
                     cMode_callback([],[],[ 2 1 0 ]) ;
                 case 2                                  % T1-nulling, plot T2 decay, focus back on this fig.
                     cMode_callback([],[],[ 0 3 2 ]) ;
                     cMode_callback([],[],[ 0 3 2 ]) ;
                     plotT2_callback([],[])          ;
-                    figure( iPr.Fig1 )              ;
+                    figure( iC.P.Fig1 )             ;
                 case 3
                     cMode_callback([],[],[ 0 3 2 ]) ;
             end % switch Mode
@@ -1229,31 +1224,29 @@ function keyPress_callback(~,evt)
         case 'p'                                        % Print results
             printVars_callback([],[])               ;
         case 'w'                                        % Switch IR mode
-            if ismember( iPr.Mode, [ 1 2 ] )
+            if ismember( iC.P.Mode, [ 1 2 ] )
                 cMode_callback([],[],[ 2 1 0 ])     ;
             end % if
         case 'a'                                        % Change active figure
-            if isfield( iPr, 'Fig2' )                   % ishandle( iPr.Fig2 )
-                figure( iPr.Fig2    )               ;
+            if isfield( iC.P, 'Fig2' )                  % ishandle( iC.P.Fig2 )
+                figure( iC.P.Fig2    )              ;
             end % if
         case 'u'                                        % Focus on TR setting uicontrol
-            uicontrol( iUI.TRS )                    ;
+            uicontrol( UI1.TRS )                    ;
         case '2'                                        % Toggle T2prep on/off
             t2p_toggle_callback                     ;
-%         case 'x'                                        % Change focus to this figure (WIP)
-%             figure( iPr.Fig1 )                      ;
     end % switch
 end % fcn
 
 function placeUiBox(~,~)                                % Function to resize the UI panel (automatically called)
-    if ishandle(iUIBox)                                 % (The first time this fn is called, the panel doesn't exist yet)
-        pxFig = getpixelposition(iPr.Fig1)          ;   % Figure size in px, for manual normalizing
+    if ishandle( F1_Pan )                               % (The first time this fn is called, the panel doesn't exist yet)
+        pxFig = getpixelposition(iC.P.Fig1)         ;   % Figure size in px, for manual normalizing
         myAx = gca                                  ;   % A handle to the current graphics axes/plot
-        uiW = iUI.Wpx / pxFig(3)                    ;   % Normalized UI panel width
-        uiH = iUI.Hpx / pxFig(4)                    ;   % Normalized UI panel height
+        uiW = UI1.Wpx / pxFig(3)                    ;   % Normalized UI panel width
+        uiH = UI1.Hpx / pxFig(4)                    ;   % Normalized UI panel height
         uiX = myAx.Position(3) - uiW + 0.115        ;   % The axis' inner right x pos. (but why the "fudge factor"?)
         uiY = myAx.Position(4) - uiH + 0.090        ;   % The axis' inner upper y pos. (--"--)
-        iUIBox.Position = [ uiX uiY uiW uiH ]       ;
+        F1_Pan.Position = [ uiX uiY uiW uiH ]       ;
     end % if
 end % fcn
 
@@ -1264,13 +1257,10 @@ end % fcn
 
 function toggleT2prep( set )
     if ( set == -1 )
-        iS.T2pOn = ~iS.T2pOn                        ;
+        iC.S.T2pOn = ~iC.S.T2pOn                    ;
     else
-        iS.T2pOn = set                              ;
-    end % if set
-%     if ( iS.T2pOn )                                   % Note: Can't change UI here, as the GUI is redrawn later.
-%     else
-%     end % if
+        iC.S.T2pOn = set                            ;
+    end % if set                                        % Note: Can't change UI here, as the GUI is redrawn later.
 end % fcn
 
 end % script fn

@@ -1,12 +1,13 @@
-function Fig2 = IR_T2_Subplot( iT , iS2 )   % S0/T2/tags for tissues to plot; find TEopt for two ( S0set, T2set, TsTag, TEset )
+function IR_T2_SigPlot( iT )                    % S0/T2/tags for tissues to plot; find TEopt for two ( S0set, T2set, TsTag, TEset )
 %% (D)IR MRI TE calculation and T2 decay plot for IR_Calc
 %   - This function is called from the IR_TI_Calculator
 %   - Plot the T2 decay at readout, to determine the optimal TE.
 %
 %  NOTE:
-%   - Use symbolic solution instead of just the graphical one? Not critical.
+%   - 
 %
 %  TODO:
+%   - Simulate echo train by the Hennig phase evolution method?!?
 %   - Add max TE for GM/WML contrast (for WM-DIR)
 %   - Find TE range for 90% (80%?) DelS? Find the point under the threshold that has a neighbor above? Or solve?
 %   - Make the TE_opt calculation more robust for different cases?
@@ -27,43 +28,42 @@ function Fig2 = IR_T2_Subplot( iT , iS2 )   % S0/T2/tags for tissues to plot; fi
 %   - Use less globals! Conflict with other script when names are the same. Structs are economic.
 %   - Report contrast between WML and both secondary tissues (WM and GM). Always relevant?
 %
+%  ONHOLD:
+%   - Use symbolic solution instead of just the graphical one? Not critical.
+%
 
 
 %% INIT
 debugInfo  = 1                                      ;   % Show extra info in the command window?
 Tis     = iT.T2tis                                  ;   % Tissues to T2 plot: Normally WML, WM, GM
-% nTis    = size( Tis , 2 )                           ;   % # of tissues to compare to the first one, including itself
-DUR     = 499   ;   % iS2.ETD                       ;   % Use the sequence Echo Train Duration as plot duration? No, less.
+% nTis    = size( Tis , 2 )                         ;   % # of tissues to compare to the first one, including itself
+DUR     = 499   ;   % iC.S.ETD                      ;   % Use the sequence Echo Train Duration as plot duration? No, less.
 
-global iC  iPr                                          % IR-Calc Program data struct (common global with Fig1)
-global UI2 iR2                                          % UI/tissue/times data structs (sequence struct is iS2)
-global iC_Ini2 UI2Bx UI2on frzS2                        % Non-struct globals
-global oldS2 oldC2 oldTR  TEopt TEset TEmin TEstr oTs1 oTs2     % Result globals (TODO: Put some in structs)
+global iC                                               % IR-Calc globally used data structs
+global iC_Ini2 F2_Pan UI2                               % Non-struct globals; UI for Fig 2
 
 fSz = 10.80 ;   % sSz(4)/100.00                     ;   % Scaling factor for figures, ?1.0% of screen size
-% set(0,'defaultfigureposition',[3*fsz 1*fsz 4*fsz 3*fsz])    % Default fig. position & size
+% set(0,'defaultfigureposition',[3*fsz 1*fsz 4*fsz 3*fsz])  % Default fig. position & size
 figName = 'MR T2 contrast calculator'               ;
-iPr.Fig2 = findobj( 'Type'  , 'Figure'          ,   ... % Find this script's figure (possibly among others)
+iC.P.Fig2 = findobj( 'Type' , 'Figure'          ,   ... % Find this script's figure (possibly among others)
                     'Name'  , figName           )   ;
-if isempty(iPr.Fig2)                                    % Iff my figure does not yet exist... (was ~ishghandle)
-    iPr.Fig2 = figure(                              ... % ...make a new figure!
+if isempty(iC.P.Fig2)                                   % Iff my figure does not yet exist... (was ~ishghandle)
+    iC.P.Fig2 = figure(                             ... % ...make a new figure!
         'Name'          , figName               ,   ...
-        'Color'         , iPr.FigClr            ,   ...
+        'Color'         , iC.P.FigClr           ,   ...
         'Position'      , [ 14 16 80 60 ]*fSz   ,   ...  % At pos. (x,y)% of ScreenSize, etc.
         'KeyPressFcn'   , @keyPress_callback    )   ;
 else
-    figure(iPr.Fig2)                                ;   % If my figure exists, make it the CurrentFigure
+    figure(iC.P.Fig2)                               ;   % If my figure exists, make it the CurrentFigure
 end % if
-Fig2 = iPr.Fig2                                     ;   % Return the handle to this figure
 
 t = sym('t')                                        ;   % Set the symbolic explicitly as it's used in nested functions
 
 if isempty( iC_Ini2 )
-    iC_Ini2  = true     ;                               % The program has been initialized
-    UI2on   = true      ;                               % Show the UI control panel
-    frzS2   = 0         ;                               % Don't freeze the RelSNR at first
-    TEmin   = 14        ; % ms                          % Minimum allowed TE
-    TEset   = -1.0      ;                               % The manually set TE (will be set to TEopt)
+    iC_Ini2     = true      ;                           % The program has been initialized
+    UI2.PanVis  = true      ;                           % Show the UI control panel
+    UI2.FrzSNR  = false     ;                           % Don't freeze the RelSNR at first
+    iC.TEmin    = 14        ; % ms                      % Minimum allowed TE
 end % if iC_Ini2
 
 %% MAIN
@@ -76,9 +76,9 @@ end % main
 
 % -) Calculate & plot MRI S(t) over a duration, and TE giving optimal contrast
 function mainTEcalc()
-    oTs1  = Tis(1)  ;	oTs2  = Tis(2)              ;   % Usually WML, WM, GM
-    if ( abs(03.5*iT.S0(oTs2)) < abs(iT.S0(oTs1)) )     % If 2nd signal (WM) is very low (nulled)...
-        oTs2 = Tis(3)                               ;   % ...use the 3rd tissue (GM) instead (TODO: Use both and compare?)
+    iC.M.o1 = Tis(1) ; iC.M.o2 = Tis(2)             ;   % Usually WML, WM, GM
+    if ( abs(03.5*iT.S0(iC.M.o2)) < abs(iT.S0(iC.M.o1)) )   % If 2nd signal (WM) is very low (nulled)...
+        iC.M.o2 = Tis(3)                            ;       % ...use the 3rd tissue (GM) instead (TODO: Use both and compare?)
     end % if
     NTs = length(iT.S0)                             ;
     St = zeros(DUR+1,NTs)                           ;   % Array of signals
@@ -86,17 +86,17 @@ function mainTEcalc()
     St(1,:) = iT.S0                                 ;
     for tpt = 1:DUR
         for i = 1:NTs
-            St(tpt+1,i) = iT.S0(i).*exp(-tpt./iT.T2(i));
+            St(tpt+1,i) = iT.S0(i).*exp(-tpt./iT.T2(i)) ;
         end % for i
     end % for tpt
     
     % TODO: Calculate both for Ts1 vs Ts2 (WML vs WM) and Ts1 vs Ts3 (WML vs GM)?!
-    S_dif = ( St(:,oTs1) - St(:,oTs2) )             ;   % Calculate signal difference between two T2s; don't use Abs() here
+    S_dif = ( St(:,iC.M.o1) - St(:,iC.M.o2) )       ;   % Calculate signal difference between two T2s; don't use Abs() here
     [ dif_max , maxind ] = max(S_dif)               ;   % Find the max difference
     [ abs_max , absind ] = max(abs(S_dif))          ;   % Find the max difference of the absolute function
     [ neg_max , negind ] = max(-S_dif)              ;   % Find the max difference of the negative function
     if ( debugInfo )
-        fprintf("   "); fprintf("%-6s", ["pos","abs","neg","t (ms)"] ); fprintf("\n");     % Legends
+        fprintf("   ") ; fprintf("%-6s", ["pos","abs","neg","t (ms)"] ) ; fprintf("\n") ;   % Legends
         disp( [ maxind , absind , negind ] -1 )         % -1 converts indices to times (ms)
     end % if debug
     S0_1 = iT.S0(Tis(1)); S0_2 = iT.S0(Tis(2))      ;
@@ -104,12 +104,11 @@ function mainTEcalc()
         S_dif = -S_dif                              ;   %       (abs_max > dif_max) || (maxind == 1) && (absind ~= 1) ???
         dif_max = neg_max; maxind = negind          ;   % abs_max; absind;
     end % if
-    TEopt = maxind -1                               ;
+    iC.R.TEopt = maxind -1                          ;
     [ ~ , S_atTE ] = max(abs( St(maxind,:) ))       ;   % The strongest signal at the time of max difference
-%     TI2_n = uint16(FindOptTE(                           % TODO: Solve symbolically?
     
-    if ( TEset < 0 )
-        TEset = TEopt                               ;
+    if ~isfield( UI2, 'TEset' )
+        UI2.TEset = iC.R.TEopt                      ;
     end % if
     
     hold on
@@ -122,30 +121,28 @@ function mainTEcalc()
         'LineWidth'     , 1.0                   )
     hold off
     
-%     whitebg( 'white' )                              ;
-%     whitebg( [ 0.70 1.00 0.70 ] )                   ;   % Debug: See white plot/GUI elements
-    Tag1 = regexp(iT.TsTag(oTs1),' ','split')       ;   % Trick to trim space chars off single-word strings
-    Tag2 = regexp(iT.TsTag(oTs2),' ','split')       ;   % TODO: Use 'tokens' instead for sanity? Trickyish though.
-    Tag3 = num2str(iS2.TRef)                        ;
-%     txt = join([ "T2 decay and TE_{opt} (" Tag1 " vs " Tag2 ")" ],"");
+%   whitebg( 'white' )                              ;   % DEBUG
+%   whitebg( [ 0.70 1.00 0.70 ] )                   ;   % DEBUG: See white plot/GUI elements
+    Tag1 = regexp(iT.TsTag(iC.M.o1),' ','split')    ;   % Trick to trim space chars off single-word strings
+    Tag2 = regexp(iT.TsTag(iC.M.o2),' ','split')    ;   % TODO: Use 'tokens' instead for sanity? Trickyish though.
+    Tag3 = num2str(iC.S.TRef)                       ;
     txt = join([ "T2 decay and TE_{opt} (" Tag1 " vs " Tag2 "), for TR_{eff} = " Tag3 " ms"],"");
     title(  txt              , 'FontSize' , 16 )    ;
     ylabel( 'Rel. MR signal' , 'FontSize' , 12 )
     xlabel( 'time (ms)'      , 'FontSize' , 12 )
 %     xlm = [ 0 200*ceil( TI2_max/200 ) ] ; xlim(xlm) ;   % Round up to 200 on the x axis
-%     ylm = [ -1 1 ]                      ; ylim(ylm) ;   % Rel. S is in [-1,1]
-%     ylm = ylim()                                    ;
+%     ylm = [ -1 1 ]    % ylim()          ; ylim(ylm) ;   % Rel. S is in [-1,1]
     
-    if ( TEopt == DUR )
-        TEstr = "N/A"                               ;
-    elseif (TEopt == 0 )
-        TEopt = TEmin                               ;
-        TEstr = string([ '(~' num2str(TEopt) ' ms)' ]);
+    if ( iC.R.TEopt == DUR )
+        UI2.TEstr = "N/A"                           ;
+    elseif ( iC.R.TEopt == 0 )
+        iC.R.TEopt = iC.TEmin                       ;
+        UI2.TEstr = string([ '(~' num2str(iC.R.TEopt) ' ms)' ]) ;
     else
-        TEstr = string([ num2str(TEopt) ' ms' ])    ;
+        UI2.TEstr = string([      num2str(iC.R.TEopt) ' ms'  ]) ;
     end % if
     
-    lxlm = [ TEopt , TEopt ]                        ;   % Time of max signal difference
+    lxlm = [ iC.R.TEopt , iC.R.TEopt ]              ;   % Time of max signal difference
     lylm = [ St(maxind,S_atTE) , dif_max ]          ;   % Lower/upper y of line (= S_dif curve)
     line( lxlm , lylm   ,                           ... % Vertical line @ crossing
         'Color'         , 'black'               ,   ...
@@ -155,22 +152,22 @@ function mainTEcalc()
     
     LegS = strings(1,NTs)                           ;   % Make a legend...
     for i = 1:NTs                                       % ...showing the tissue short names and T2 times
-        LegS(i) = sprintf('%s (T2 = %i ms)', iT.TsTag(i), iT.T2(i) );
+        LegS(i) = sprintf('%s (T2 = %i ms)', iT.TsTag(i), iT.T2(i) ) ;
     end % for i
     legend( LegS        ,                           ...
         'Location'      , 'South'               )   ;   % 'Best' may conflict with UI and TextBox
-    
-    iR2.magS    = abs( St(TEopt+1 , oTs1) )         ;
-    iR2.magC    = abs( dif_max            )         ;   % TODO: How does this work? It should be negative if WML<WM
-    iR2.magCW   = magC( St(TEopt+1,Tis(1)) , St(TEopt+1,Tis(2)) )   ;   % WML-WM contrast
-    iR2.magCG   = magC( St(TEopt+1,Tis(1)) , St(TEopt+1,Tis(3)) )   ;   % WML-GM contrast
-    if isempty(oldS2)   ; oldS2 = iR2.magS  ;   end     % Old signal strength   for comparison; as float
-    if isempty(oldC2)   ; oldC2 = iR2.magC  ;   end     % Old signal difference for comparison; as float
-    if isempty(oldTR)   ; oldTR = iS2.TR    ;   end     % Old rep. time         for comparison; as float
-    relS    = uint16(100*(  iR2.magS/oldS2  ))      ;   % Rel. Signal for WML
-    relC    = uint16(100*(  iR2.magC/oldC2  ))      ;   % Rel. Contrast between WML and tissue
-    relS_t  = uint16(100*( (iR2.magS/oldS2)/sqrt(iS2.TR/oldTR) ));  % Rel. SNR per time (ratio of S over TR^0.5)
-    relC_t  = uint16(100*( (iR2.magC/oldC2)/sqrt(iS2.TR/oldTR) ));  % Rel. CNR per time (ratio of S over TR^0.5)
+    TEo = iC.R.TEopt + 1                            ;
+    iC.R.magS  =  abs( St(TEo,iC.M.o1 ) )           ;
+    iC.R.magC  =  abs( dif_max        )             ;   % TODO: How does this work? It should be negative if WML<WM
+    iC.R.magCW = magC( St(TEo,Tis(1)) , St(TEo,Tis(2)) );   % WML-WM contrast
+    iC.R.magCG = magC( St(TEo,Tis(1)) , St(TEo,Tis(3)) );   % WML-GM contrast
+    if ~isfield(iC.R,'olS2') ; iC.R.olS2 = iC.R.magS ; end  % Old signal strength   for comparison; as float
+    if ~isfield(iC.R,'olC2') ; iC.R.olC2 = iC.R.magC ; end  % Old signal difference for comparison; as float
+    if ~isfield(iC.R,'olTR') ; iC.R.olTR = iC.S.TR   ; end  % Old rep. time         for comparison; as float
+    relS    = uint16(100*(  iC.R.magS/iC.R.olS2  )) ;   % Rel. Signal for WML
+    relC    = uint16(100*(  iC.R.magC/iC.R.olC2  )) ;   % Rel. Contrast between WML and tissue
+    relS_t  = uint16(100*( (iC.R.magS/iC.R.olS2)/sqrt(iC.S.TR/iC.R.olTR) )) ;   % Rel. SNR per time (ratio of S over TR^0.5)
+    relC_t  = uint16(100*( (iC.R.magC/iC.R.olC2)/sqrt(iC.S.TR/iC.R.olTR) )) ;   % Rel. CNR per time (ratio of S over TR^0.5)
     fStr = ['\\itOptimal TE:\n\\rm\\bf'             ... % Tex \bf\it\rm = bold/italic/normal; escape \ for sprintf!
             ' TE_{opt}    = %3s \n'                 ... % %3.i ms
             ' S_{WML}    = %4.3f \n'                ... % %4.3f
@@ -179,19 +176,20 @@ function mainTEcalc()
             ' rC(L-?)  = %3.f%%\n'                  ... % %4.3f
             ' rSNR/t   = %3.f%%\n'                  ... % %4.3f
             ' rCNR/t   = %3.f%%'                ]   ;   % %4.3f
-    fVar = [ TEstr, iR2.magS, iR2.magC, relS, relC, relS_t, relC_t ]; % 
+    fVar = [ UI2.TEstr, iC.R.magS, iC.R.magC, relS, relC, relS_t, relC_t ]  ; 
     figTextBox( fStr , fVar )                       ;   % Display an info text box on the figure
-    if ( frzS2 == 0 )                                   % If RelZ isn't frozen (by the UI button)
-        oldC2 = iR2.magC                            ;
-        oldS2 = iR2.magS                            ;
-        oldTR = iS2.TR                              ;
-    end % if frzS2
+    if ( ~UI2.FrzSNR )                                  % If RelZ isn't frozen (by the UI button)
+        iC.R.olC2 = iC.R.magC                       ;
+        iC.R.olS2 = iC.R.magS                       ;
+        iC.R.olTR = iC.S.TR                         ;
+    end % if FrzSNR
     
-    if ( TEset ~= TEopt )
-        iR2.magSset =  abs( St(TEset+1,oTs1  ) )    ;
-        iR2.dirCset = magC( St(TEset+1,oTs1  ) , St(TEset+1,oTs2  ) )   ;
-        iR2.C_WMset = magC( St(TEset+1,Tis(1)) , St(TEset+1,Tis(2)) )   ;   % WML-WM contrast
-        iR2.C_GMset = magC( St(TEset+1,Tis(1)) , St(TEset+1,Tis(3)) )   ;   % WML-GM contrast
+    if ( UI2.TEset ~= iC.R.TEopt )
+        TEs = UI2.TEset + 1                         ;
+        iC.R.magSset =  abs( St(TEs,iC.M.o1  ) )    ;
+        iC.R.dirCset = magC( St(TEs,iC.M.o1  ) , St(TEs,iC.M.o2 ) ) ;
+        iC.R.C_WMset = magC( St(TEs,Tis(1)   ) , St(TEs,Tis(2)  ) ) ;   % WML-WM contrast
+        iC.R.C_GMset = magC( St(TEs,Tis(1)   ) , St(TEs,Tis(3)  ) ) ;   % WML-GM contrast
     end % if
 
 end % mainTEcalc
@@ -255,20 +253,20 @@ function createUI()                                     % Display a button to sh
         'Callback'  , @masterUI_callback        )   ;   % UI to show/hide the UI control panel
     
     createUIPanel()                                 ;
-    switch UI2on
-        case true ; UI2Bx.Visible = 'on'            ;
-        case false; UI2Bx.Visible = 'off'           ;
-    end % switch UI2on
+    switch UI2.PanVis
+        case true ; F2_Pan.Visible = 'on'           ;
+        case false; F2_Pan.Visible = 'off'          ;
+    end % switch UI2 PanVis
 end % createUI
 
 function createUIPanel()
-    boxClr = iPr.FigClr                             ;   % UI panel background color (same as fig background)
+    boxClr = iC.P.FigClr                            ;   % UI panel background color (same as fig background)
     mX = 10; mY =  6                                ;   % x/y margins in UI panel
     eN = 04; eW = 130; eH = 30                      ;   % Number of UI elements; default element width/height
     UI2.Hpx = eN*eH + 2*mY; uiT = UI2.Hpx - mY + 3  ;   % UI panel height in pixels; top position for elements
     UI2.Wpx = eW + 2*mX                             ;   % UI panel width in pixels
     
-    UI2Bx = uipanel(          iPr.Fig2          ,   ... % UI2Bx
+    F2_Pan = uipanel(         iC.P.Fig2         ,   ... % F2_Pan
         'BackgroundColor'   , boxClr            ,   ... %  [ 0.8 0.8 0.4 ]
         'BorderType'        , 'etchedin'        ,   ... % default 'etchedin'
         'BorderWidth'       , 1.0               ,   ... % default 1
@@ -280,7 +278,7 @@ function createUIPanel()
     for i = 1:eN; eY = uiT - i*eH                   ;   % Generate each UI element on a new row in the panel
         switch i
         case  1
-        uicontrol( 'Parent' , UI2Bx             ,   ... % ui pT2s
+        uicontrol( 'Parent' , F2_Pan            ,   ... % ui pT2s
             'Style'         , 'pushbutton'      ,   ...
             'String'        , 'Results'         ,   ...
             'ToolTipString' ,'[p] Print results',   ...
@@ -292,31 +290,31 @@ function createUIPanel()
         uiStr = 'TE_set:                      ms'   ;
         ttStr = '[q] Echo time'                     ;
         t2Str = 'Can be set manually'               ;
-        uicontrol( 'Parent' , UI2Bx             ,   ... % ui TE[T|S]
+        uicontrol( 'Parent' , F2_Pan            ,   ... % ui TE[T|S]
             'Style'         , 'text'            ,   ...
             'ToolTipString' , ttStr             ,   ...
             'String'        , uiStr             ,   ...
             'BackgroundColor', boxClr           ,   ...
             'HorizontalAlignment', 'Left'       ,   ...
             'Position'  , [ mX+00 eY+01 eW 16 ] )   ;
-        UI2.TES = uicontrol( 'Parent' , UI2Bx   ,   ...
+        UI2.TES = uicontrol( 'Parent' , F2_Pan  ,   ...
             'Style'         , 'edit'            ,   ...
             'Min' , 11      , 'Max' , 11        ,   ... % Tip: Max > Min allows multiline edit
             'ToolTipString' , t2Str             ,   ...
-            'String'        , TEset             ,   ...
-            'Value'         , TEset             ,   ...
+            'String'        , UI2.TEset         ,   ...
+            'Value'         , UI2.TEset         ,   ...
             'Position'  , [ mX+40 eY+00 60 20 ] ,   ...
             'Callback'  , @te_set_callback      )   ;   % UI to set TR
 
         case  3
         uiStr = 'Freeze relSNR'                     ;
         ttStr = '[r] Set comparison std.'           ;
-        uicontrol( 'Parent' , UI2Bx             ,   ... % uiSetS
+        uicontrol( 'Parent' , F2_Pan            ,   ... % uiSetS
             'Style'         , 'radiobutton'     ,   ... % 'togglebutton'/'checkbox'
             'ToolTipString' , ttStr             ,   ...
             'String'        , uiStr             ,   ...
             'BackgroundColor',  boxClr          ,   ...
-            'Value'         , frzS2             ,   ...
+            'Value'         , UI2.FrzSNR        ,   ...
             'Position'  , [ mX+10 eY+00 eW 24 ] ,   ...
             'Callback'  , @setSignal_callback   )   ;   % UI to set the relative signal for comparison
 %             'Min' , 0       , 'Max' , 1         ,   ... % Max/Min 0/1 are default for Matlab toggles
@@ -325,14 +323,14 @@ function createUIPanel()
         uiStr = 'Dur.:                          ms' ;
         ttStr = '[d] Plot duration'                 ;
         t2Str = 'Can be set manually'               ;
-        uicontrol( 'Parent' , UI2Bx             ,   ... % ui DUR[T|S]
+        uicontrol( 'Parent' , F2_Pan            ,   ... % ui DUR[T|S]
             'Style'         , 'text'            ,   ...
             'ToolTipString' , ttStr             ,   ...
             'String'        , uiStr             ,   ...
             'BackgroundColor', boxClr           ,   ...
             'HorizontalAlignment', 'Left'       ,   ...
             'Position'  , [ mX+00 eY+01 eW 16 ] )   ;
-        UI2.DURS = uicontrol( 'Parent' , UI2Bx  ,   ...
+        UI2.DURS = uicontrol( 'Parent' , F2_Pan ,   ...
             'Style'         , 'edit'            ,   ...
             'ToolTipString' , t2Str             ,   ...
             'String'        , DUR               ,   ...
@@ -346,10 +344,10 @@ function createUIPanel()
 end % createUIPanel
 
 function masterUI_callback(~,~)                         % UI that shows/hides the UI control panel
-    UI2on = ~UI2on                                  ;
-    switch UI2on
-        case true ; UI2Bx.Visible = 'on'            ;
-        case false; UI2Bx.Visible = 'off'           ;
+    UI2.PanVis = ~UI2.PanVis                        ;
+    switch UI2.PanVis
+        case true ; F2_Pan.Visible = 'on'           ;
+        case false; F2_Pan.Visible = 'off'          ;
     end
 end % fcn
 
@@ -369,9 +367,9 @@ function printVars_callback(~,~)                        % UI that prints info to
             '*  C_GM   --"--   =  % 1.3f   *\n' ]   ;   % TODO: Proper right alignment of positive/negative numbers
     fVar = { iT.TsTag(1),iT.S0(1), iT.TsTag(2),iT.S0(2),    ...
              iT.TsTag(3),iT.S0(3), iT.TsTag(4),iT.S0(4),    ...
-             TEstr, iR2.magS, iR2.magCW, iR2.magCG          };
+             UI2.TEstr, iC.R.magS, iC.R.magCW, iC.R.magCG } ;
     fprintf( fStr, fVar{:} );
-    if ( TEset ~= TEopt )
+    if ( UI2.TEset ~= iC.R.TEopt )
         fStr = [                                    ...
             '*******************************\n'     ...
             '*  TE_set         =  %4.i ms  *\n'     ...
@@ -380,8 +378,8 @@ function printVars_callback(~,~)                        % UI that prints info to
             '*  C_GM   --"--   =  % 1.3f   *\n'     ...
             '*  relS(set/opt)  =  %4.1i %%   *\n'   ...
             '*  relC(set/opt)  =  %4.1i %%   *\n' ] ;
-        fVar = { uint16(TEset), iR2.magSset, iR2.C_WMset, iR2.C_GMset,              ...
-                 uint16(100*iR2.magSset/iR2.magS), uint16(100*iR2.dirCset/iR2.magC) } ;
+        fVar = { uint16(UI2.TEset), iC.R.magSset, iC.R.C_WMset, iC.R.C_GMset,               ...
+                 uint16(100*iC.R.magSset/iC.R.magS), uint16(100*iC.R.dirCset/iC.R.magC) }   ;
         fprintf( fStr, fVar{:} )                    ;
 %                 '*******************************\n' ...
 %                 '***     Manual echo time:   ***\n' ...
@@ -391,25 +389,25 @@ end % fcn
 
 function te_set_callback(src,~)                         % UI to set TE manually
     val = str2val( src.String )                     ;
-    if ( ( val >= 0 ) && ( val < iS2.ETD ) )            % Allowed range
-        TEset = val                                 ;
+    if ( ( val >= 0 ) && ( val < iC.S.ETD ) )             % Allowed range
+        UI2.TEset = val                             ;
     else
-        TEset = TEopt                               ;   % You can reset with a neg. value
+        UI2.TEset = iC.R.TEopt                      ;   % You can reset with a neg. value
     end % if
     main();
 end % fcn
 
 function setSignal_callback(~,~)                        % UI callback to toggle Freeze RelSNR
-    frzS2 = ~frzS2                                  ;   % was src.Value;
+    UI2.FrzSNR = ~UI2.FrzSNR                        ;   % was src.Value;
     main();
 end % fcn
 
 function dur_set_callback(src,~)                        % UI to set DUR manually
     val = str2val( src.String )                     ;
-    if ( ( val > TEopt ) && ( val < iS2.ETD ) )         % Allowed range
+    if ( ( val > iC.R.TEopt ) && ( val < iC.S.ETD ) )     % Allowed range
         DUR = val                                   ;
     else
-        DUR = iS2.ETD                               ;   % You can reset with a neg. value
+        DUR = iC.S.ETD                                ;   % You can reset with a neg. value
     end % if
     main();
 end % fcn
@@ -424,22 +422,24 @@ function keyPress_callback(~,evt)
             uicontrol( UI2.TES )                    ;
         case 'd'                                        % Focus on DUR setting uicontrol
             uicontrol( UI2.DURS )                   ;
+        case 'r'                                        % Freeze SNR
+            setSignal_callback([],[])               ;
         case 'a'                                        % Change active figure
-            if isfield( iPr, 'Fig1' )
-                figure( iPr.Fig1    )               ;
+            if isfield( iC.P, 'Fig1' )
+                figure( iC.P.Fig1    )              ;
             end % if
     end % switch
 end % fcn
 
 function placeUiBox(~,~)                                % Function to resize the UI panel (automatically called)
-    if ishandle(UI2Bx)                                  % (The first time this fn is called, the panel doesn't exist yet)
-        pxFig = getpixelposition(iPr.Fig2)          ;   % Figure size in px, for manual normalizing
+    if ishandle( F2_Pan )                               % (The first time this fn is called, the panel doesn't exist yet)
+        pxFig = getpixelposition(iC.P.Fig2)         ;   % Figure size in px, for manual normalizing
         myAx = gca                                  ;   % A handle to the current graphics axes/plot
         uiW = UI2.Wpx / pxFig(3)                    ;   % Normalized UI panel width
         uiH = UI2.Hpx / pxFig(4)                    ;   % Normalized UI panel height
         uiX = myAx.Position(3) - uiW + 0.115        ;   % The axis' inner right x pos. (but why the "fudge factor"?)
         uiY = myAx.Position(4) - uiH + 0.090        ;   % The axis' inner upper y pos. (--"--)
-        UI2Bx.Position = [ uiX uiY uiW uiH ]        ;
+        F2_Pan.Position = [ uiX uiY uiW uiH ]       ;
     end % if
 end % fcn
 
