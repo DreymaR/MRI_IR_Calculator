@@ -1,4 +1,5 @@
 *_tmp*
+*tmp_*
 *_bak*
 *_backup*
 *_Backup*
@@ -9,3 +10,5 @@
 desktop.ini
 *.asv
 *~lock.*
+*.log
+IR_UserRelaxTimes.m

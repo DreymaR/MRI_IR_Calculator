@@ -29,6 +29,10 @@ function IR_Calculator()
 %       - GE seemingly uses artificially high T1csf for DIR in lieu of explicit Mz_end calculations?
 % 
 %  TOFIX/WIP:
+%   - Make the custom times a separate, non-version-controlled file for user interaction.
+%       - IR_UserRelaxTimes.m should be at program root level.
+%       - The program can generate it if it isn't there. And SetRelaxTimes should read from it.
+%       - Make it one struct? Could have User1.iS.B0, User1.T1_WM etc.
 %   - To put fns in other files, use this way to pass the global struct byref:
 %       - iC = someFn( fnVars, iC )
 %   - Set TR/T_Inv etc on vendor change; back to former when leaving. In/Out.
@@ -1188,7 +1192,7 @@ function printInfo_callback(~,~)                        % UI callback that print
 end % fcn
 
 function refresh_callback(~,~)                          % Refresh T1/T2 values
-    fprintf( "<> IR-Calc T1/T2 refresh\n" )         ;
+    fprintf( "<>   IR-Calc T1/T2 refreshed\n" )     ;
     SetRelaxTimes( iC.P.B0sel )                     ;
     main();
 end % fcn
