@@ -32,7 +32,7 @@ global iC                                               % IR-Calc globally used 
 
     iC.S.U2.T1_WM   =  850.0                        ;   % 3.0 T GE source value =  825 ms
     iC.S.U2.T1_GM   = 1400.0                        ;   % 3.0 T --"--           = 1400 ms
-    iC.S.U2.T1_CSF  = 5000.0                        ;   % 3.0 T --"--           = 4270 ms (5000 for DIR?!)
+    iC.S.U2.T1_CSF  = 4700.0                        ;   % 3.0 T --"--           = 4270 ms (5000 for DIR?!); meas. in ventricle
     iC.S.U2.T1_MS   = 1400.0                        ;   % 3.0 T Alsop           = 1350 ms
     iC.S.U2.T1_Fat  =  250.0                        ;   % 3.0 T GE source value =  250 ms
 

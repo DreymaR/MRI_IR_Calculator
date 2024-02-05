@@ -21,7 +21,7 @@
         <B0sys>      3.0    </B0sys>    <!--  #.# T (Used for display only)                         -->
         <T1_WM>    850.0    </T1_WM>    <!--  3.0 T GE source value =  825 ms                       -->
         <T1_GM>   1400.0    </T1_GM>    <!--  3.0 T --"--           = 1400 ms                       -->
-        <T1_CSF>  5000.0    </T1_CSF>   <!--  3.0 T --"--           = 4270 ms (5000 for DIR?!)      -->
+        <T1_CSF>  4700.0    </T1_CSF>   <!--  3.0 T --"--           = 4270 ms (5000 for DIR?!)      -->
         <T1_MS>   1400.0    </T1_MS>    <!--  3.0 T Alsop           = 1350 ms                       -->
         <T1_Fat>   250.0    </T1_Fat>   <!--  3.0 T GE source value =  250 ms                       -->
 
