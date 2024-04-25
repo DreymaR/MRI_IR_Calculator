@@ -7,6 +7,7 @@ function IR_Calculator()
 %   - Also plot the T2 decay at readout (in a separate file), to determine the optimal TE.
 % 
 %  NOTE:
+%   - If changes are made to the files, make sure to `clear all` before running it anew. To this end, see `debug` below.
 %   - TI times are defined vendor-style here: That is, TI1 is the full time and TI2 only the time to readout.
 %       - So TI1 = time_TI1, and TI2 = time_TI1 - time_TI2. This makes the signal formulae simpler.
 %   - Pulse durations are calculated into Ti times, but not T2prep except when reporting Siemens times. Vendor specific.
@@ -14,7 +15,7 @@ function IR_Calculator()
 %       - We've used 160*5.29 = 845 ? 850 ms as our standard T_Ro.
 %   - Relaxation times vary widely in literature. We have used values from GE's scanner implementation, and other sources.
 %       - Lalande et al, MRI 2016: https://www.sciencedirect.com/science/article/pii/S0730725X16301266
-%   - There's a good explanation of simple inversion mathematics at http://xrayphysics.com/contrast.html
+%   - There's a good explanation of simple inversion mathematics at https://xrayphysics.com/contrast.html
 %   - About (single) incomplete inversion, see Miho Kita et al, MRI 31(9) 2013 p 1631–1639.
 %       - Kita et al, MRI 2013: https://www.sciencedirect.com/science/article/pii/S0730725X13002312
 %       - https://www.seichokai.or.jp/fuchu/dept1603.php (partially in Japanese; contains formulae; not working anymore?)
@@ -30,12 +31,13 @@ function IR_Calculator()
 %       - GE seemingly uses artificially high T1csf for DIR in lieu of explicit Mz_end calculations?
 % 
 %  TOFIX/WIP:
+%   - To put fns in other files, use this way to pass the global struct byref:
+%       - iC = someFn( fnVars, iC )
+%       - In newer MatLab, this is suggested as preferable to globals!
 %   - Make the custom times a separate, non-version-controlled file for user interaction.
 %       - IR_UserRelaxTimes.m should be at program root level.
 %       - The program can generate it if it isn't there. And SetRelaxTimes should read from it.
 %       - Make it one struct? Could have User1.iS.B0, User1.T1_WM etc.
-%   - To put fns in other files, use this way to pass the global struct byref:
-%       - iC = someFn( fnVars, iC )
 %   - Set TR/T_Inv etc on vendor change; back to former when leaving. In/Out.
 %   - When setting TE in WM-DIR, RelC got the wrong sign on the Results printout.
 %   - Add relax. times based on Neema, Hanson etc reporting increased T1/T2 in NAWM/NAGM in serious MS patients!?
@@ -106,15 +108,16 @@ function IR_Calculator()
 %   - Anonymous function handle for CalcTI1, for easier passing to other functions such as vpasolve()? Likely not.
 
 
-%% INIT
-% global debug; if isempty(debug); debug = 1; end % if
+%% DEBUG
+% global debug; if isempty(debug); debug = 1; end % if    % If changes are made to the files, activate this part to ensure a clear data space.
 % if( debug ~= 0 )
 %     clear all                                     ;   % saveImg = true to save figure as image in Figures dir? Can use the fig. menu instead.
-% end % if
-debugInfo  = 1                                      ;   % Show extra info for debugging in the command window?
+% end % if debug
+debugInfo  = 1                                      ;   % Show extra info debugging info in the command window
 
+%% INIT
 global iC                                               % IR-Calc S_ystem, P_rogram, M_atter(Tissue), T_imes, R_esults data structs
-global iC_Ini1 F1_Pan UI1                               % Globals that didn't thrive in structs; UI for Fig 1   % TODO: Move UI1 to Magplot.m?
+global iC_Ini1 F1_Pan UI1                               % Globals that didn't thrive in structs; UI for Fig 1   % TODO: Move UI1 to MagPlot.m?
 
 [pathstr,~,~]=fileparts(mfilename('fullpath'))      ;   % [pathstring,name,extension]
 addpath(genpath(pathstr))                           ;   % Add all subfolders to search path
@@ -137,7 +140,7 @@ if isempty(iC.P.Fig1)                                   % Iff my figure does not
         'Position'      , [ 90 25 80 60 ]*fSz   ,   ... % At pos. (90,25)% of ScreenSize, etc.
         'KeyPressFcn'   , @keyPress_callback    )   ;
 else
-    figure(iC.P.Fig1)                                ;   % If my figure exists, make it the CurrentFigure
+    figure(iC.P.Fig1)                               ;   % If my figure already exists, make it the CurrentFigure
 end % if
 
 t = sym('t');                                           % Set the symbolic explicitly as it's used in nested functions
@@ -146,32 +149,32 @@ t = sym('t');                                           % Set the symbolic expli
 % TI1s(TI2s) = T1*log(2/(2*exp(-TI2s/T1) + exp(-iC.S.TRef/T1) - 1)) ;   % TI1(TI2) nulling T1_n1, using syms
 % % Note: Do not replace CalcTI1(TI2,T1) with TI1s(t) above: It's much slower.
 
-% Parameter presets for the first run (most can be changed in the UI)
-if isempty( iC_Ini1 )
-    iC_Ini1 = true;                                     % The program has been initialized
 
-iC.S.Vnd    = ""        ;                               % Vendor name (for sequence adjustments)
-iC.S.TR     = 6000.0    ; % ms                          % Repetition time, as float
-iC.S.ETD    =  850.0    ; % ms                          % Readout time T_Ro = ETL * ESP (GE: Check CVs after Download)
-iC.S.IEf    =  100      ; % %                           % Inversion efficiency in percent (are GE's SECH pulses ~98%?)
-iC.S.IPD    =   16.0    ; % ms                          % Inversion pulse duration (GE/Phi used 16/17 ms HypSec in tests)
-iC.S.T2pOn  = true      ;                               % WIP: Turn this off when T1n is set manually (as T2 is then unknown)?
-iC.S.T2p    =    0.0    ; % ms                          % T2 preparation time
-iC.S.TOb    =   25.0    ; % ms  % WIP: Relate to iC.S.IPD   % TI1 outboard (Siemens: Add around 23 ms; +10? ms for T2p?)
-iC.S.FAx    =   90      ; % °                           % (MEX = cos(FAx*pi/180) is MagZ after excitation with angle FAx)
-iC.S.ESP    = 3.65; iC.S.IET = 0.50; % iC.S.ETL = 122;  % Echo Spacing, Echo Train Length and Inv.Eff. for TSE readout
+if isempty( iC_Ini1 )                                   % Parameter presets for the first run (most can be changed in the UI)
+                                                        % NB: Use `clear all` before running to ensure this part is run
+    iC.S.Vnd    = ""        ;                           % Vendor name (for sequence adjustments)
+    iC.S.TR     = 6000.0    ; % ms                      % Repetition time, as float
+    iC.S.ETD    =  850.0    ; % ms                      % Readout time T_Ro = ETL * ESP (GE: Check CVs after Download)
+    iC.S.IEf    =  100      ; % %                       % Inversion efficiency in percent (are GE's SECH pulses ~98%?)
+    iC.S.IPD    =   16.0    ; % ms                      % Inversion pulse duration (GE/Phi used 16/17 ms HypSec in tests)
+    iC.S.T2pOn  = true      ;                           % WIP: Turn this off when T1n is set manually (as T2 is then unknown)?
+    iC.S.T2p    =    0.0    ; % ms                      % T2 preparation time
+    iC.S.TOb    =   25.0    ; % ms  % WIP: Relate to iC.S.IPD   % TI1 outboard (Siemens: Add around 23 ms; +10? ms for T2p?)
+    iC.S.FAx    =   90      ; % °                       % (MEX = cos(FAx*pi/180) is MagZ after excitation with angle FAx)
+    iC.S.ESP    = 3.65; iC.S.IET = 0.50; % iC.S.ETL = 122;  % Echo Spacing, Echo Train Length and Inv.Eff. for TSE readout
                                                         % WIP: Just assuming incomplete inversion doesn't lead to anything!
                                                         % A proper Bloch simulation, at least w/ [ Mz, Mt ] is required.
                                                         % Actual flip angles are swept from about 10-170° to preserve Mz!
-iC.P.RCS    =   0.0     ; % fraction                    % Residual CSF signal at readout. Partial nulling may increase CNR.
-iC.S.Rew    =   0.0     ; %                             % TODO: Rewinder after readout, regaining some of the pre-readout Mz?
-UI1.Show    =  true     ;                               % Show the UI control panel
-iC.P.Mode   =     1     ;                               % Start in mode 1, then keep the run mode over reruns
-iC.P.TsSel  =     3     ;                               % Start with a value (CSF), then keep the selection over reruns
-iC.P.B0sel  =     2     ;                               % Start with GE 3T setup, w/ relaxation times from literature/source
-SetRelaxTimes( iC.P.B0sel )                             % Need to initialize relaxation times before mode.
-SetMode( iC.P.Mode )                                    % Initialize mode settings
-end % if iC_Ini1
+    iC.P.RCS    =   0.0     ; % fraction                % Residual CSF signal at readout. Partial nulling may increase CNR.
+    iC.S.Rew    =   0.0     ; %                         % TODO: Rewinder after readout, regaining some of the pre-readout Mz?
+    UI1.Show    =  true     ;                           % Show the UI control panel
+    iC.P.Mode   =     1     ;                           % Start in mode 1, then keep the run mode over reruns
+    iC.P.TsSel  =     3     ;                           % Start with a value (CSF), then keep the selection over reruns
+    iC.P.B0sel  =     2     ;                           % Start with GE 3T setup, w/ relaxation times from literature/source
+    SetRelaxTimes( iC.P.B0sel )                         % Need to initialize relaxation times before mode
+    SetMode( iC.P.Mode )                                % Initialize mode settings
+    iC_Ini1 = true;                                     % The program has been initialized (this var will stay upon rerunning)
+end % if initialized
 
 %% MAIN
 main();

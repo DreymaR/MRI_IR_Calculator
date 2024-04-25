@@ -20,7 +20,7 @@ Simulations and regressions therein have to be redone for each clinical setting.
 ## Online Resources
 
 - Miho Kita's online [tool for calculating TI for various sequence types](https://seichokai.jp/fuchu/null_point_english/)
-- XRayPhysics' explanation of [simple inversion mathematics](http://xrayphysics.com/contrast.html)
+- XRayPhysics' explanation of [simple inversion mathematics](https://xrayphysics.com/contrast.html)
 - On T1 times in tissues: [Lalande et al, MRI 2016](https://www.sciencedirect.com/science/article/pii/S0730725X16301266)
 
 

@@ -59,11 +59,11 @@ end % if
 
 t = sym('t')                                        ;   % Set the symbolic explicitly as it's used in nested functions
 
-if isempty( iC_Ini2 )
-    iC_Ini2     = true      ;                           % The program has been initialized
+if isempty( iC_Ini2 )                                   % Parameter presets for the first run only
     UI2.PanVis  = true      ;                           % Show the UI control panel
     UI2.FrzSNR  = false     ;                           % Don't freeze the RelSNR at first
     iC.TEmin    = 14        ; % ms                      % Minimum allowed TE
+    iC_Ini2     = true      ;                           % The program has been initialized
 end % if iC_Ini2
 
 %% MAIN
