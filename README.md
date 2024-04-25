@@ -1,6 +1,6 @@
 # MRI_IR_Calculator_MatLab
 
-## MRI (D)IR TI/T1++ calculator for MatLab, by GadOE (Øystein Bech Gadmar)
+## MRI (D)IR TI/T1++ calculator for MatLab, by Øystein Bech-Aase (formerly Bech Gadmar)
 ### Based on original code by Atle Bjørnerud, in collaboration with Wibeke Nordhøy
 
 Just run the main .m file in Matlab. Tested mostly on R2018-R2019.
@@ -16,6 +16,12 @@ based on measured T1 values, for a predetermined set of other parameters.
   
 The T1-vs-TI IR-Calc tool could be deployed in clinical settings without MatLab access. 
 Simulations and regressions therein have to be redone for each clinical setting.
+
+## Online Resources
+
+- Miho Kita's online [tool for calculating TI for various sequence types](https://seichokai.jp/fuchu/null_point_english/)
+- XRayPhysics' explanation of [simple inversion mathematics](http://xrayphysics.com/contrast.html)
+- On T1 times in tissues: [Lalande et al, MRI 2016](https://www.sciencedirect.com/science/article/pii/S0730725X16301266)
 
 
 ---

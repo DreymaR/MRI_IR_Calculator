@@ -17,7 +17,8 @@ function IR_Calculator()
 %   - There's a good explanation of simple inversion mathematics at http://xrayphysics.com/contrast.html
 %   - About (single) incomplete inversion, see Miho Kita et al, MRI 31(9) 2013 p 1631–1639.
 %       - Kita et al, MRI 2013: https://www.sciencedirect.com/science/article/pii/S0730725X13002312
-%       - https://www.seichokai.or.jp/fuchu/dept1603.php (partially in Japanese; contains formulae)
+%       - https://www.seichokai.or.jp/fuchu/dept1603.php (partially in Japanese; contains formulae; not working anymore?)
+%       - https://seichokai.jp/fuchu/null_point_english/ (Miho Kita's online tool for calculating TIs for various sequences)
 %       - OliG: 95-99% is realistic, depending on the pulses. Nonselective IR is better. (HypSec ~98%?)
 %   - Simulated TI_FLAIR/TI1 were lower than the ones used by Siemens/GE, typically by 150 ms @ TR 5 s w/ T2prep
 %       - Intentional, accepting a little CSF signal to gain WML signal and contrast? Seems not. CSF is really nulled.
