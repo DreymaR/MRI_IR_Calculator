@@ -7,7 +7,7 @@ function IR_Calculator()
 %   - Also plot the T2 decay at readout (in a separate file), to determine the optimal TE.
 % 
 %  NOTE:
-%   - If changes are made to the files, make sure to `clear all` before running it anew. To this end, see `debug` below.
+%   - If changes are made to the files, make sure to `clear all` before running anew. To this end, see `DEBUG` below.
 %   - TI times are defined vendor-style here: That is, TI1 is the full time and TI2 only the time to readout.
 %       - So TI1 = time_TI1, and TI2 = time_TI1 - time_TI2. This makes the signal formulae simpler.
 %   - Pulse durations are calculated into Ti times, but not T2prep except when reporting Siemens times. Vendor specific.
@@ -31,7 +31,7 @@ function IR_Calculator()
 %       - GE seemingly uses artificially high T1csf for DIR in lieu of explicit Mz_end calculations?
 % 
 %  TOFIX/WIP:
-%   - To put fns in other files, use this way to pass the global struct byref:
+%   - For all fns in this and other files, pass the now global struct byref instead of making it global:
 %       - iC = someFn( fnVars, iC )
 %       - In newer MatLab, this is suggested as preferable to globals!
 %   - Make the custom times a separate, non-version-controlled file for user interaction.
@@ -111,18 +111,20 @@ function IR_Calculator()
 %% DEBUG
 % global debug; if isempty(debug); debug = 1; end % if    % If changes are made to the files, activate this part to ensure a clear data space.
 % if( debug ~= 0 )
-%     clear all                                     ;   % saveImg = true to save figure as image in Figures dir? Can use the fig. menu instead.
+%     clear all                                       ;   % A saveImg var to save figure as image in Figures dir? Can use the fig. menu instead.
 % end % if debug
-debugInfo  = 1                                      ;   % Show extra info debugging info in the command window
+debugInfo  = false                                  ;   % Show extra info debugging info in the command window?
 
 %% INIT
 global iC                                               % IR-Calc S_ystem, P_rogram, M_atter(Tissue), T_imes, R_esults data structs
 global iC_Ini1 F1_Pan UI1                               % Globals that didn't thrive in structs; UI for Fig 1   % TODO: Move UI1 to MagPlot.m?
 
-[pathstr,~,~]=fileparts(mfilename('fullpath'))      ;   % [pathstring,name,extension]
-addpath(genpath(pathstr))                           ;   % Add all subfolders to search path
-rmpath(genpath([pathstr filesep '.git']))           ;   % Remove unnecessary search path
-clear pathstr
+myPath = mfilename('fullpath')                      ;   % The path to this script, including its file name
+[myPath,~,~] = fileparts( myPath )                  ;   % [pathString,name,extension]
+cd(myPath)                                          ;
+addpath(genpath(myPath))                            ;   % Add all subfolders to search path
+rmpath(genpath([myPath filesep '.git']))            ;   % Remove unnecessary search path (the .git folder)
+clear myPath
 
 % sSz = get(0,'ScreenSize')                         ;   % Get the screen size (actually, in R2015b+ pixels are 1/96")
 fSz = 10.80; % sSz(4)/100.00;                           % Scaling factor for figures, ?1.0% of screen size
@@ -912,7 +914,7 @@ function createUIPanel()
             if ~isfield(iC.S,'oldS'); iC.S.oldS = iC.S.newS; end % if       % For use in the relSNR uicontrol box
             if ~isfield(iC.S,'oldB'); iC.S.oldB = iC.S.B0  ; end % if       % (w/ normal global var., was if isempty)
             relS0 = uint16(100*(iC.S.newS/iC.S.oldS)*(iC.S.B0/iC.S.oldB));  % Rel.S0 is prop. to CNR, and rel.SNR here
-            if ( debugInfo )
+            if ( debugInfo == true )
                 fprintf("   "); fprintf("%-10s", ["new S0L","old S0L","ratio","(rel. units)"] ); fprintf("\n") ;
                 disp( [ iC.S.newS, iC.S.oldS, iC.S.newS/iC.S.oldS ] )
             end % if debug
@@ -1140,7 +1142,7 @@ end % fcn
 
 function printVars_callback(~,~)                        % UI callback that prints results to the command window
     fprintf( iC.P.pStr, iC.P.pVar )                 ;
-    if debugInfo && ismember( iC.P.Mode, [ 1 2 ] )      % Debug info for plot
+    if ( debugInfo ) && ismember( iC.P.Mode, [ 1 2 ] )  % Debug info for plot
 %         len = length(iC.R.MzIt)                     ;
 %         fprintf('\nMagZ(TR) over the first %i repetitions (starting at 1):\n', len);
 %         disp( iC.R.MzIt )                           ;   % Show the iterative Z magnetization over the first TRs

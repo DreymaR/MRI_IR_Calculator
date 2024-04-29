@@ -26,4 +26,25 @@ Simulations and regressions therein have to be redone for each clinical setting.
 
 ---
 Have fun inverting!
-Øystein
+_Øystein_
+
+
+## Addendum: Using IR-Calc for non-brain applications
+
+The user T1/T2 times can be set to any tissues you like, as long as you figure out what acts as "WM/GM/MS/CSF" for your purposes.
+
+These are default T1/T2 times for the "1.5 T" set of user relaxation times, taken from GE's values and literature:
+- ?? :  T1      T2      (ms)
+- WM :  660     80
+- GM : 1200     95
+- MS : 1200    100
+- CSF: 4308   3500
+
+Here are some experimental values used for imaging synovitis in the knee in one of our studies:
+- WM : 1000     50      for healthy synovium
+- GM : (not used)
+- MS : 1100     80      for synovitis
+- CSF: 3600   1200      for synovial fluid
+
+These values are mostly guesswork for now, in part based on attempted measurement of said values.
+But the point is, IR-Calc can be used this way. Of course, it can be a challenge to procure good value estimates.

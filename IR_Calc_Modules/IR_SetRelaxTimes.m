@@ -118,7 +118,7 @@ global iC                                               % IR-Calc globally used 
             T2_MS   = iC.S.U2.T2_MS                 ;   % 1.5 T Alsop           =   60 ms (meas. 100 ms @3T)
             T2_Fat  = iC.S.U2.T2_Fat                ;   % ???
         case 5                                  % 1.5 T (Alsop); Madhuranthakam et al, Mag Res Med 2012 67(1):81-88
-            B0sys   =    1.5;
+            B0sys   =    1.5                        ;
             T1_WM   =  650.0                        ;   % 1.5 T Alsop
             T1_GM   = 1300.0                        ;   % 1.5 T --"--
             T1_CSF  = 4200.0                        ;   % 1.5 T --"--
