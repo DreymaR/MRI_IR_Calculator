@@ -351,7 +351,7 @@ function T1z2 = mainT1WNul()                            % T1_nulled = T1WNul( T1
 %     disp( [ S0W_t, S0L_t ] )
 %     plot(Ti2,Ti1)                                   ;   % DEBUG: Plot the TI1 calculated for each TI2
 %     S0_DIFF = abs(S0_DIR(:,1)-S0_DIR(:,2))          ;   % DEBUG: Calculate signal difference between two T1s
-%     [~,minind] = min(S0_DIFF)                       ;   % Find the T1Wnull crossing graphically (as [minval,minind])
+%     [~,minind] = min(S0_DIFF)                       ;   % Find the T1W-null crossing graphically (as [minval,minind])
 %     iC.T.Ti2n = Ti2(minind)                         ;
 %     plot(Ti2,S0_DIFF)                               ;   % DEBUG: Plot the WM/MS signal difference
     hold off
@@ -512,7 +512,7 @@ function SetMode( mode )                                % Sets the run mode and 
             else
                 SetT1n( 2, 1 )                      ;
             end % if
-        case 3                                          % T1W-DIR default: (Null out CSF as the longest T1)
+        case 3                                          % T1Wn-DIR default: (Null out CSF as the longest T1)
     end % switch
     iC.P.Mode = mode                                ;   % Make the mode setting global
     if ( mode ~= 3 ) && ( oldMode ~= 3 )
@@ -539,7 +539,7 @@ function SetT1n( mode, T1s )                            % Sets the Nulling selec
             i = 1:4                                 ;
         case 2                                          % DIR: Plot Mz for brain tissues (WM, GM, CSF, WML?)
             i = 1:4                                 ;
-        case 3                                          % T1W-DIR: Plot the signal for WM and WML
+        case 3                                          % T1Wn-DIR: Plot the signal for WM and WML
             i = [ 1 4 ]                             ;   % NOTE: This is not implemented yet; Mode 3 uses its own plot
     end % switch
     iC.M.Plt = iC.M.T(:,i); iC.M.Leg = iC.M.Tag(1,i)        ;   % Update the T1 times to plot and their label texts
@@ -639,7 +639,7 @@ function IR_CreateUI()                                  % Display a button to sh
         'Callback'  , @plotT2_callback          )   ;   % UI to create T2 vs TE plot
     end % if
     
-    if ismember( iC.P.Mode, [ 2 3 ] )                    % If DIR/T1W_n:
+    if ismember( iC.P.Mode, [ 2 3 ] )                    % If DIR/T1Wn:
         cPar = [ 0 3 2 ]                            ;   % Switch to this mode from mode 1-3
         uicontrol( 'Style'  , 'pushbutton'      ,   ...
         'ToolTipString' , '[t] Switch mode'     ,   ...
