@@ -111,7 +111,7 @@ global iC                                               % IR-Calc globally used 
     plot( TPv , Mz      , '-'                   ,   ... % Plot the (steady state) Z magnetization
         'LineWidth'     , 1.5                   )
     
-    xlabel( 't (ms)'                            , 'FontSize' , 12 )
+    xlabel( 'time (ms)'                         , 'FontSize' , 12 )
     ylabel( 'Rel. Z-accessible magnetization'   , 'FontSize' , 12 )
     xlm = [  0  DUR ]   ; xlim(xlm)                 ;
     ylm = [ -1   1  ]   ; ylim(ylm)                 ;

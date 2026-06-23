@@ -72,6 +72,8 @@ function IR_Calculator()
 %       - We'll need a more thorough Bloch simulation to account for all the spin components.
 % 
 %  DONE:
+%   - Add another TR button so it's "TR up" vs "TR down"; I already had hotkeys for it.
+%   - Use "time (ms)" both on MZ and MT plots (only on T2 plot before).
 %   - Refresh T1/T2 shortcut (press 'r') for when custom values were added in IR_SetRelaxTimes().
 %   - Vendor setting, so sequence details and time calculations can be adjusted accordingly.
 %       - Phi and Sie add T2P time to TI. GE doesn't.
@@ -140,6 +142,7 @@ if isempty(iC.P.Fig1)                                   % Iff my figure does not
         'Color'         , iC.P.FigClr           ,   ...
         'NumberTitle'   , 'off'                 ,   ... % Removes 'Figure #: ' from the window title
         'Position'      , [ 90 25 80 60 ]*fSz   ,   ... % At pos. (90,25)% of ScreenSize, etc.
+        'Theme'         , 'light'               ,   ...
         'KeyPressFcn'   , @keyPress_callback    )   ;
 else
     figure(iC.P.Fig1)                               ;   % If my figure already exists, make it the CurrentFigure
@@ -606,7 +609,7 @@ function IR_CreateUI()                                  % Display a button to sh
         'String'        , 'Panel'               ,   ...
         'FontWeight'    , 'bold'                ,   ...
         'Units'         , 'normalized'          ,   ...
-        'Position'  , [ uiX uiY-4*eS eW eH ]    ,   ...
+        'Position'  , [ uiX uiY-3.5*eS eW eH ]  ,   ...
         'Callback'  , @masterUI_callback        )   ;   % UI to show/hide the UI control panel
     
     switch iC.P.Mode
@@ -655,7 +658,7 @@ function IR_CreateUI()                                  % Display a button to sh
         'String'        , 'Vendor'              ,   ...
         'FontWeight'    , 'bold'                ,   ...
         'Units'         , 'normalized'          ,   ...
-        'Position'  , [ uiX uiY-5*eS eW eH ]    ,   ...
+        'Position'  , [ uiX uiY-4.5*eS eW eH ]  ,   ...
         'Callback'  , @vendor_callback          )   ;   % UI to select vendor implementation
 %     if ( iC.S.Vnd == "" )
         UI1.Vnd.String = "Vendor"                   ;
@@ -663,13 +666,22 @@ function IR_CreateUI()                                  % Display a button to sh
 %         UI1.Vnd.String = iC.S.Vnd                 ;
 %     end % if
     
-    UI1.Stp = uicontrol( 'Style', 'pushbutton'  ,   ... % ui Stp
+    UI1.StU = uicontrol( 'Style', 'pushbutton'  ,   ... % ui StU
         'ToolTipString' , '[c/d] TR ±1 s'       ,   ...
-        'String'        , 'Step TR'             ,   ...
+        'String'        , 'TR +1 s'             ,   ...
+        'FontWeight'    , 'bold'                ,   ...
+        'Units'         , 'normalized'          ,   ...
+        'Position'  , [ uiX uiY-6*eS eW eH ]    ,   ...
+        'Callback'  , {@steptr_callback,1000}   )   ;   % UI to change TR in +1 s steps
+
+
+    UI1.StD = uicontrol( 'Style', 'pushbutton'  ,   ... % ui StD
+        'ToolTipString' , '[c/d] TR ±1 s'       ,   ...
+        'String'        , 'TR -1 s'             ,   ...
         'FontWeight'    , 'bold'                ,   ...
         'Units'         , 'normalized'          ,   ...
         'Position'  , [ uiX uiY-7*eS eW eH ]    ,   ...
-        'Callback'  , {@steptr_callback,1000}   )   ;   % UI to debug by increasing TR in steps
+        'Callback'  , {@steptr_callback,-1000}  )   ;   % UI to change TR in -1 s steps
 
     createUIPanel()                                 ;
     switch UI1.Show
@@ -692,7 +704,7 @@ function createUIPanel()
     
     F1_Pan = uipanel( iC.P.Fig1                 ,   ... % F1_Pan
         'BackgroundColor'   , boxClr            ,   ... %  [ 0.8 0.8 0.4 ]
-        'BorderType'        , 'etchedin'        ,   ... % default 'etchedin'
+        'BorderType'        , 'line'            ,   ... % old default 'etchedin'; use 'line' (new def.) or 'none'
         'BorderWidth'       , 1.0               ,   ... % default 1
         'Clipping'          , 'off'             ,   ... % default 'on'; 'off' is good for debugging
         'Units'             , 'normalized'      ,   ... % Normalized units facilitate resizing to axes
@@ -738,7 +750,7 @@ function createUIPanel()
             'Callback'  , @b0_sel_callback      )   ;   % UI to set relaxation times based on B0 and ref.
         
     case  3
-        uiStr = 'TR:                          ms'   ;
+        uiStr = 'TR:                           ms'  ;
         ttStr = '[u] Repetition time'               ;
         t2Str = 'TR = TR_ef + T_Ro + T_T2p'         ;
         uicontrol( 'Parent' , F1_Pan            ,   ... % ui TR[T|S]
@@ -758,7 +770,7 @@ function createUIPanel()
             'Callback'  , @tr_set_callback      )   ;   % UI to set TR
 
     case  4
-        uiStr = 'T_Ro:                      ms'     ;
+        uiStr = 'T_Ro:                       ms'    ;
         ttStr = 'TSE Readout time'                  ;
         t2Str = 'ETD = ETL * ES'                    ;
         uicontrol( 'Parent' , F1_Pan            ,   ... % ui TRo[T|S]
@@ -778,7 +790,7 @@ function createUIPanel()
             'Callback'  , @tro_set_callback     )   ;   % UI to set T_Read
 
     case  5
-        uiStr = 'Inv.eff.:                   %'     ;
+        uiStr = 'Inv.eff.:                    %'    ;
         ttStr = 'Inversion efficiency'              ;
         t2Str = 'IEf = -cos(FA_inv)'                ;
         uicontrol( 'Parent' , F1_Pan            ,   ... % ui IEf[T|S]
@@ -816,7 +828,7 @@ function createUIPanel()
             'Callback'  , @ipd_set_callback     )   ;   % UI to set inversion pulse duration
 
     case  7
-        uiStr = 'T2p:                        ms'    ;
+        uiStr = 'T2p:                         ms'   ;
         ttStr = 'T2 preparation'                    ;
         t2Str = 'E2p = exp(-T2p/T2)'                ;
         t3Str = '[2] T2 prep. On/Off'               ;
@@ -852,7 +864,7 @@ function createUIPanel()
         end % if
 
     case  8
-        uiStr = 'T1_n1:                    ms'      ;   % Note: UIControl text can't support Tex/LaTeX
+        uiStr = 'T1_n1:                     ms'     ;   % Note: UIControl text can't support Tex/LaTeX
         ttStr = 'Longer T1 to null'                 ;
         UI1.Tn1T = uicontrol( 'Parent', F1_Pan  ,   ... % ui Tn1[T|S]
             'Style'         , 'text'            ,   ...
@@ -871,7 +883,7 @@ function createUIPanel()
 
     case  9
         if ismember( iC.P.Mode , [ 2 3 ] )               % DIR T1 nulling and T1-DIR null two T1
-            uiStr = 'T1_n2:                    ms'  ;
+            uiStr = 'T1_n2:                     ms' ;
             ttStr = 'Shorter T1 to null'            ;
         UI1.Tn2T = uicontrol( 'Parent', F1_Pan  ,   ... % ui Tn2[T|S]
             'Style'         , 'text'            ,   ...
@@ -910,7 +922,7 @@ function createUIPanel()
             UI1.STnS.ForegroundColor  = iC.P.Gray   ;   % Gray out the tissue selector if entering values manually
         end % if iC.T.T1z
         else % ismember iC.P.Mode
-            UI1.STnT.String = 'Rel. S0:                     %' ;
+            UI1.STnT.String = 'Rel. S0:                       %'    ;
             if ~isfield(iC.S,'oldS'); iC.S.oldS = iC.S.newS; end % if       % For use in the relSNR uicontrol box
             if ~isfield(iC.S,'oldB'); iC.S.oldB = iC.S.B0  ; end % if       % (w/ normal global var., was if isempty)
             relS0 = uint16(100*(iC.S.newS/iC.S.oldS)*(iC.S.B0/iC.S.oldB));  % Rel.S0 is prop. to CNR, and rel.SNR here
@@ -928,7 +940,7 @@ function createUIPanel()
         end % if
 
     case  11
-        uiStr = 'Res.S:                 %'          ;
+        uiStr = 'Res.S:                  %'         ;
         ttStr = 'Residual signal'                   ;
         t2Str = 'May improve CNR?'                  ;
         uicontrol( 'Parent' , F1_Pan            ,   ... % ui RS[T|S]
@@ -987,7 +999,7 @@ function createUIPanel()
     
     switch iC.P.Mode
         case 1                                          % 1IR T1 nulling
-        UI1.Tn1T.String  = 'T1_n:                      ms'  ;   % There is only one T1 to null in 1IR
+        UI1.Tn1T.String  = 'T1_n:                       ms'  ;   % There is only one T1 to null in 1IR
         UI1.STnT.Position = UI1.STnT.Position + [ 0 eH 0 0 ] ;  % Move the tissue selector one line up
         UI1.STnS.Position = UI1.STnS.Position + [ 0 eH 0 0 ] ;  % --"--
 %       UI1.Tn2S.Visible = 'off'                    ;   % Hide the tissue 2 edit text/box (ui###T/S, if created)
@@ -1213,9 +1225,9 @@ function keyPress_callback(~,evt)
             plotT2_callback([],[])                  ;
         case 'v'                                        % Switch vendor implementation
             vendor_callback([],[])                  ;
-        case 'd'                                        % Step TR (DEBUG)
+        case 'd'                                        % Step TR +1 s
             steptr_callback([],[], 1000)            ;
-        case 'c'                                        % Step TR (DEBUG)
+        case 'c'                                        % Step TR -1 s
             steptr_callback([],[],-1000)            ;
         case 't'                                        % TrueT2-DIR shortcut
             switch iC.P.Mode

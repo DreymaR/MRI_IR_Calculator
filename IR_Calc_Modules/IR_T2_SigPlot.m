@@ -52,6 +52,7 @@ if isempty(iC.P.Fig2)                                   % Iff my figure does not
         'Name'          , figName               ,   ...
         'Color'         , iC.P.FigClr           ,   ...
         'Position'      , [ 14 16 80 60 ]*fSz   ,   ...  % At pos. (x,y)% of ScreenSize, etc.
+        'Theme'         , 'light'               ,   ...
         'KeyPressFcn'   , @keyPress_callback    )   ;
 else
     figure(iC.P.Fig2)                               ;   % If my figure exists, make it the CurrentFigure
@@ -268,7 +269,7 @@ function createUIPanel()
     
     F2_Pan = uipanel(         iC.P.Fig2         ,   ... % F2_Pan
         'BackgroundColor'   , boxClr            ,   ... %  [ 0.8 0.8 0.4 ]
-        'BorderType'        , 'etchedin'        ,   ... % default 'etchedin'
+        'BorderType'        , 'line'            ,   ... % old default 'etchedin'; use 'line' (new def.) or 'none'
         'BorderWidth'       , 1.0               ,   ... % default 1
         'Clipping'          , 'off'             ,   ... % default 'on'; 'off' is good for debugging
         'Units'             , 'normalized'      ,   ... % Normalized units facilitate resizing to axes
@@ -287,7 +288,7 @@ function createUIPanel()
 %             'Units'         , 'normalized'      ,   ...
         
         case  2
-        uiStr = 'TE_set:                      ms'   ;
+        uiStr = 'TE_set:                       ms'  ;
         ttStr = '[q] Echo time'                     ;
         t2Str = 'Can be set manually'               ;
         uicontrol( 'Parent' , F2_Pan            ,   ... % ui TE[T|S]
@@ -320,9 +321,9 @@ function createUIPanel()
 %             'Min' , 0       , 'Max' , 1         ,   ... % Max/Min 0/1 are default for Matlab toggles
 
         case  4
-        uiStr = 'Dur.:                          ms' ;
-        ttStr = '[d] Plot duration'                 ;
-        t2Str = 'Can be set manually'               ;
+        uiStr = 'Dur.:                            ms'   ;
+        ttStr = '[d] Plot duration'                     ;
+        t2Str = 'Can be set manually'                   ;
         uicontrol( 'Parent' , F2_Pan            ,   ... % ui DUR[T|S]
             'Style'         , 'text'            ,   ...
             'ToolTipString' , ttStr             ,   ...
