@@ -29,7 +29,7 @@ function IR_Calculator()
 %       - Upon checking GE 3D-FSE source, turns out the reason was compensations for CSF Mz @ end of readout.
 %       - GE uses a Mz_end "Mz at the end of XETA/CUBE refocusing train, assuming 130-deg max flip", only for FLAIR
 %       - GE seemingly uses artificially high T1csf for DIR in lieu of explicit Mz_end calculations?
-% 
+%  
 %  TOFIX/WIP:
 %   - For all fns in this and other files, pass the now global struct byref instead of making it global:
 %       - iC = someFn( fnVars, iC )
